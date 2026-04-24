@@ -132,7 +132,67 @@ export class FormStateMachine {
 
   // ── Page filling ────────────────────────────────────────────────────────────
 
+  private async handleResumeSelectionPage(): Promise<boolean> {
+    if (!document.querySelector('[data-testid="resume-selection-form"]')) return false
+    if (!this.resumeData.id) return false
+
+    const fileData = await new Promise<{ filename: string; content_type: string; content_base64: string } | null>(
+      (resolve) => {
+        try {
+          if (!chrome.runtime?.id) { resolve(null); return }
+          chrome.runtime.sendMessage(
+            { type: 'API_CALL', method: 'GET', path: `/resume/file/${this.resumeData.id}`, token: this.token },
+            (res: { data?: { filename: string; content_type: string; content_base64: string } } | undefined) =>
+              resolve(res?.data ?? null),
+          )
+        } catch { resolve(null) }
+      },
+    )
+
+    if (!fileData) return false
+
+    // Open Resume options menu
+    const optionsBtn = document.querySelector<HTMLButtonElement>('[data-testid="ResumeOptionsMenu"]')
+    if (!optionsBtn) return false
+    optionsBtn.click()
+    await this.delay(600)
+
+    // Click "Upload a different file"
+    const uploadBtn = document.querySelector<HTMLButtonElement>('[data-testid="ResumeOptionsMenu-upload"]')
+    if (!uploadBtn) return false
+    uploadBtn.click()
+    await this.delay(600)
+
+    // Inject file into hidden file input
+    const fileInput = document.querySelector<HTMLInputElement>('input[type="file"][data-testid="resume-selection-file-resume-radio-card-file-input"]')
+      ?? document.querySelector<HTMLInputElement>('input[type="file"]')
+    if (!fileInput) return false
+
+    const bytes = atob(fileData.content_base64)
+    const arr = new Uint8Array(bytes.length)
+    for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i)
+    const blob = new Blob([arr], { type: fileData.content_type })
+    const file = new File([blob], fileData.filename, { type: fileData.content_type })
+    const dt = new DataTransfer()
+    dt.items.add(file)
+    fileInput.files = dt.files
+    fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+
+    this.send({
+      type: 'FIELD_FILLED',
+      fieldLabel: 'Resume',
+      value: fileData.filename,
+      isAI: false,
+      pageIndex: this.currentPage,
+    })
+
+    await this.delay(1500) // wait for Indeed to process the upload
+    return true
+  }
+
   private async fillCurrentPage() {
+    if (await this.handleResumeSelectionPage()) return
+
     const radioGroups = getRadioGroups()
     const fields = getNonRadioFillableFields()
 
