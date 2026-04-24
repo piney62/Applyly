@@ -130,7 +130,13 @@ export class FormStateMachine {
         break
       }
 
-      const prevFields = getNonRadioFillableFields()
+      // Include first radio of each group so radio-only pages still anchor the transition
+      const prevNonRadio = getNonRadioFillableFields()
+      const prevRadioFirsts = Array.from(getRadioGroups().values())
+        .map((inputs) => inputs[0])
+        .filter((el): el is HTMLInputElement => !!el)
+      const prevFields = [...prevNonRadio, ...prevRadioFirsts]
+
       this.status = 'navigating'
       nextBtn.click()
       this.currentPage++
