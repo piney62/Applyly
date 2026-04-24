@@ -28,22 +28,27 @@ const OPEN_ENDED_TRIGGERS = ['tell', 'describe', 'explain', 'why', 'how', 'what 
   'share', 'elaborate', 'briefly', 'summary', 'background', 'experience with', 'passion']
 
 const FIELD_MAP: Record<string, (r: ResumeData) => string | undefined> = {
-  'name':           (r) => r.name,
   'full name':      (r) => r.name,
   'first name':     (r) => r.name?.split(' ')[0],
   'last name':      (r) => r.name?.split(' ').slice(1).join(' '),
-  'email':          (r) => r.email,
-  'phone':          (r) => r.phone,
+  'given name':     (r) => r.name?.split(' ')[0],
+  'family name':    (r) => r.name?.split(' ').slice(1).join(' '),
+  'surname':        (r) => r.name?.split(' ').slice(1).join(' '),
   'phone number':   (r) => r.phone,
-  'mobile':         (r) => r.phone,
-  'linkedin':       (r) => r.linkedin,
-  'location':       (r) => r.location,
-  'city':           (r) => r.location?.split(',')[0]?.trim(),
-  'address':        (r) => r.location,
-  'website':        (r) => r.linkedin,
-  'portfolio':      (r) => r.linkedin,
   'current title':  (r) => r.experience?.[0]?.title,
   'current company':(r) => r.experience?.[0]?.company,
+  'street address': (_r) => undefined,   // no street-level data in resume
+  'city, state':    (r) => r.location,   // full "City, ST" location string
+  'linkedin':       (r) => r.linkedin,
+  'location':       (r) => r.location,
+  'portfolio':      (r) => r.linkedin,
+  'website':        (r) => r.linkedin,
+  'mobile':         (r) => r.phone,
+  'email':          (r) => r.email,
+  'phone':          (r) => r.phone,
+  'city':           (r) => r.location?.split(',')[0]?.trim(),
+  'address':        (r) => r.location,
+  'name':           (r) => r.name,
 }
 
 // ── Label utilities ────────────────────────────────────────────────────────────
@@ -163,6 +168,9 @@ async function fillTextField(
   resume: ResumeData,
   getAI: GetAIAnswer,
 ): Promise<FillResult | null> {
+  // Skip already-filled fields — don't overwrite data the site pre-populated
+  if (el.value?.trim()) return null
+
   const label = getInputLabel(el)
   let value: string | undefined
   let isAI = false
@@ -184,6 +192,9 @@ async function fillSelectField(
   resume: ResumeData,
   getAI: GetAIAnswer,
 ): Promise<FillResult | null> {
+  // Skip if a non-default option is already selected
+  if (el.selectedIndex > 0) return null
+
   const label = getInputLabel(el)
   const options = Array.from(el.options).filter((o) => o.value).map((o) => o.text.trim())
 
