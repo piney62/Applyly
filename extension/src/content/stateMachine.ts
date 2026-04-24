@@ -310,16 +310,20 @@ export class FormStateMachine {
   private waitForPageTransition(prevFields: HTMLElement[]): Promise<void> {
     return new Promise((resolve) => {
       this.observer?.disconnect()
-      this.observer = new MutationObserver(() => {
-        const prevGone =
-          prevFields.length === 0 ||
-          prevFields.every((f) => !document.contains(f))
-        const newFields = getNonRadioFillableFields()
-        const newGroups = getRadioGroups()
 
-        if (prevGone && (newFields.length > 0 || newGroups.size > 0)) {
+      const check = (): boolean => {
+        const prevGone = prevFields.length === 0 || prevFields.every((f) => !document.contains(f))
+        if (!prevGone) return false
+        return getNonRadioFillableFields().length > 0 || getRadioGroups().size > 0
+      }
+
+      // Resolve immediately if new page is already fully rendered
+      if (check()) { setTimeout(resolve, 400); return }
+
+      this.observer = new MutationObserver(() => {
+        if (check()) {
           this.observer?.disconnect()
-          setTimeout(resolve, 400) // settle
+          setTimeout(resolve, 400)
         }
       })
       this.observer.observe(document.body, { childList: true, subtree: true })
