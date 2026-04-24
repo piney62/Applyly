@@ -1,0 +1,17 @@
+# Python
+backend/venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/**/*.pyc
+backend/logs/
+backend/.env
+backend/alembic/versions/*.pyc
+
+# Node / Extension
+extension/node_modules/
+extension/dist/
+extension/.env.local
+
+# OS
+.DS_Store
+Thumbs.db

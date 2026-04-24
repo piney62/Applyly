@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "Applyly",
+  "version": "1.0.0",
+  "description": "AI-powered job application assistant",
+  "permissions": ["sidePanel", "activeTab", "storage", "tabs"],
+  "host_permissions": [
+    "http://localhost:8000/*",
+    "*://*.indeed.com/*",
+    "*://*.myworkdayjobs.com/*",
+    "*://*.greenhouse.io/*",
+    "*://*.lever.co/*"
+  ],
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.indeed.com/*",
+        "*://*.myworkdayjobs.com/*",
+        "*://*.greenhouse.io/*",
+        "*://*.lever.co/*"
+      ],
+      "js": ["src/content/index.ts"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "src/background/index.ts",
+    "type": "module"
+  },
+  "action": {}
+}
