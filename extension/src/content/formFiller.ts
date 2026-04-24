@@ -62,6 +62,13 @@ export function getInputLabel(el: HTMLElement): string {
   const parentLabel = el.closest('label')
   if (parentLabel) return innerText(parentLabel)
 
+  // fieldset > legend (e.g. Indeed phone number field)
+  const fieldset = el.closest('fieldset')
+  if (fieldset) {
+    const legend = fieldset.querySelector('legend')
+    if (legend) return innerText(legend)
+  }
+
   return (
     el.getAttribute('aria-label') ||
     el.getAttribute('placeholder') ||
@@ -129,7 +136,9 @@ function isOpenEnded(label: string): boolean {
 
 function mapResumeField(label: string, resume: ResumeData): string | undefined {
   const lc = label.toLowerCase()
-  for (const [key, fn] of Object.entries(FIELD_MAP)) {
+  // Sort by key length descending so "first name" matches before "name"
+  const entries = Object.entries(FIELD_MAP).sort((a, b) => b[0].length - a[0].length)
+  for (const [key, fn] of entries) {
     if (lc.includes(key)) return fn(resume)
   }
   return undefined
