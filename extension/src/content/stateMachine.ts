@@ -3,6 +3,8 @@ import {
   fillRadioGroup,
   getRadioGroups,
   getNonRadioFillableFields,
+  getGroupLabel,
+  getInputLabel,
   type ResumeData,
   type FillResult,
 } from './formFiller'
@@ -199,19 +201,9 @@ export class FormStateMachine {
     // Notify panel of all fields detected on this page
     const allLabels = [
       ...Array.from(radioGroups.values()).map((inputs) =>
-        inputs[0] ? inputs[0].name || inputs[0].getAttribute('aria-label') || 'Question' : 'Question'
+        inputs[0] ? (getGroupLabel(inputs[0]) || inputs[0].name || 'Question') : 'Question'
       ),
-      ...fields.map((el) => {
-        const id = el.getAttribute('id')
-        const labelEl = id ? document.querySelector(`label[for="${id}"]`) : null
-        return (
-          (labelEl as HTMLElement)?.innerText?.trim() ||
-          el.getAttribute('aria-label') ||
-          el.getAttribute('placeholder') ||
-          el.getAttribute('name') ||
-          'Field'
-        )
-      }),
+      ...fields.map((el) => getInputLabel(el as HTMLElement) || 'Field'),
     ].filter(Boolean)
     this.send({ type: 'PAGE_FIELDS_DETECTED', labels: allLabels, currentPage: this.currentPage })
 

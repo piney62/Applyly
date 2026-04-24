@@ -379,7 +379,19 @@ export function getNonRadioFillableFields(): HTMLElement[] {
     'select:not([disabled])',
     '[contenteditable="true"]',
   ].join(', ')
-  return Array.from(document.querySelectorAll<HTMLElement>(selector))
+  return Array.from(document.querySelectorAll<HTMLElement>(selector)).filter(
+    (el) => el.offsetParent !== null || (el as HTMLInputElement).type === 'hidden' === false
+  ).filter(
+    // Exclude known invisible/utility fields
+    (el) => {
+      const name = el.getAttribute('name') ?? ''
+      if (name === 'g-recaptcha-response') return false
+      if (name.startsWith('g-recaptcha')) return false
+      // Exclude elements with zero dimensions (display:none, visibility:hidden)
+      const rect = el.getBoundingClientRect()
+      return rect.width > 0 || rect.height > 0
+    }
+  )
 }
 
 // Legacy export kept for compatibility
