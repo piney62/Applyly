@@ -3,6 +3,7 @@ import { useAuthStore } from './store/authStore'
 import { useResumeStore } from './store/resumeStore'
 import { useJobStore } from './store/jobStore'
 import { useFormStore } from './store/formStore'
+import { api } from './api/client'
 
 import { S00_Signup } from './screens/S00_Signup'
 import { S01_Login } from './screens/S01_Login'
@@ -79,6 +80,23 @@ export function App() {
           setFormStatus('done')
           setScreen('S07')
           break
+
+        case 'APPLICATION_SUBMITTED': {
+          const job = useJobStore.getState().detectedJob
+          const resume = useResumeStore.getState().selectedResume
+          const coverLetter = useFormStore.getState().coverLetter
+          api.tracker.add({
+            company: job?.company ?? 'Unknown',
+            job_title: job?.jobTitle ?? 'Unknown',
+            job_url: job?.jobUrl,
+            resume_id: resume?.id,
+            resume_type: resume?.type ?? 'uploaded',
+            cover_letter: coverLetter,
+            status: 'applied',
+          }).catch(() => { /* non-fatal */ })
+          setScreen('S08')
+          break
+        }
       }
     }
 

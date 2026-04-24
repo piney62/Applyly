@@ -49,7 +49,7 @@ export function S07_Review({ navigate }: Props) {
     }
   }
 
-  async function handleSubmit() {
+  async function handleManualTrack() {
     setError('')
     setSubmitting(true)
     try {
@@ -62,15 +62,10 @@ export function S07_Review({ navigate }: Props) {
         cover_letter: coverLetter,
         status: 'applied',
       })
-
-      // Notify content script (user clicks the submit button themselves)
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-      if (tab?.id) chrome.tabs.sendMessage(tab.id, { type: 'SUBMIT_FORM' })
-
       setSubmitted(true)
       setTimeout(() => navigate('S08'), 1500)
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Submission failed')
+      setError(e instanceof Error ? e.message : 'Failed to save')
     } finally {
       setSubmitting(false)
     }
@@ -152,11 +147,16 @@ export function S07_Review({ navigate }: Props) {
           </div>
         </div>
 
+        {/* Auto-detection notice */}
+        <div style={{ background: '#EEEEF9', borderRadius: 8, padding: '12px 14px', fontSize: 12, color: '#534AB7', lineHeight: 1.5 }}>
+          Complete the reCAPTCHA on the form and click Submit — we'll detect and track your application automatically.
+        </div>
+
         {error && <p style={{ margin: 0, fontSize: 12, color: '#E24B4A' }}>{error}</p>}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <Btn kind="success" fullWidth disabled={submitting} onClick={handleSubmit}>
-            {submitting ? <><Spinner size={16} color="white" /> Saving…</> : 'Submit Application'}
+          <Btn kind="success" fullWidth disabled={submitting} onClick={handleManualTrack}>
+            {submitting ? <><Spinner size={16} color="white" /> Saving…</> : 'Mark as Submitted'}
           </Btn>
           <button
             onClick={() => navigate('S03')}
