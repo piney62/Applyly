@@ -310,9 +310,15 @@ export async function fillRadioGroup(
     choice = 'yes' // yes, needs sponsorship
   }
 
+  // If a radio is already checked, report it as filled without touching it
+  const alreadyChecked = inputs.find((i) => i.checked)
+  if (alreadyChecked) {
+    return { label: question, value: getOptionLabel(alreadyChecked), isAI: false }
+  }
+
   if (choice) {
     const target = inputs.find((i) => getOptionLabel(i).toLowerCase().startsWith(choice!))
-    if (target && !target.checked) { target.click(); return { label: question, value: choice, isAI: false } }
+    if (target) { if (!target.checked) target.click(); return { label: question, value: choice, isAI: false } }
   }
 
   // AI picks from options
@@ -321,8 +327,8 @@ export async function fillRadioGroup(
     getOptionLabel(i).toLowerCase().includes(picked.toLowerCase()) ||
     picked.toLowerCase().includes(getOptionLabel(i).toLowerCase())
   )
-  if (target && !target.checked) {
-    target.click()
+  if (target) {
+    if (!target.checked) target.click()
     return { label: question, value: getOptionLabel(target), isAI: true }
   }
 
