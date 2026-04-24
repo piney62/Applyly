@@ -153,19 +153,8 @@ export class FormStateMachine {
 
     if (!fileData) return false
 
-    // Open Resume options menu
-    const optionsBtn = document.querySelector<HTMLButtonElement>('[data-testid="ResumeOptionsMenu"]')
-    if (!optionsBtn) return false
-    optionsBtn.click()
-    await this.delay(600)
-
-    // Click "Upload a different file"
-    const uploadBtn = document.querySelector<HTMLButtonElement>('[data-testid="ResumeOptionsMenu-upload"]')
-    if (!uploadBtn) return false
-    uploadBtn.click()
-    await this.delay(600)
-
-    // Inject file into hidden file input
+    // Inject directly into the hidden file input — no button clicks needed
+    // (clicking Upload button triggers native file picker dialog)
     const fileInput = document.querySelector<HTMLInputElement>('input[type="file"][data-testid="resume-selection-file-resume-radio-card-file-input"]')
       ?? document.querySelector<HTMLInputElement>('input[type="file"]')
     if (!fileInput) return false
