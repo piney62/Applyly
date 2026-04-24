@@ -36,16 +36,24 @@ const NEXT_BTN_SELECTORS = [
 
 const SUBMIT_KEYWORDS = ['submit', 'apply', 'send application', 'finish', 'complete application']
 
+function isBtnVisible(btn: HTMLButtonElement): boolean {
+  if (btn.disabled) return false
+  // offsetParent is null for position:fixed elements (e.g. Indeed's sticky footer),
+  // so use getBoundingClientRect instead
+  const r = btn.getBoundingClientRect()
+  return r.width > 0 && r.height > 0
+}
+
 function findNextButton(): HTMLButtonElement | null {
   for (const sel of NEXT_BTN_SELECTORS) {
     const btn = document.querySelector<HTMLButtonElement>(sel)
-    if (btn && !btn.disabled && btn.offsetParent !== null) return btn
+    if (btn && isBtnVisible(btn)) return btn
   }
   // Fallback: any visible button whose text looks like "next/continue"
   const buttons = document.querySelectorAll<HTMLButtonElement>('button:not([disabled])')
   for (const btn of buttons) {
     const t = btn.innerText?.toLowerCase() ?? ''
-    if ((t.includes('next') || t.includes('continue')) && btn.offsetParent !== null) return btn
+    if ((t.includes('next') || t.includes('continue')) && isBtnVisible(btn)) return btn
   }
   return null
 }
