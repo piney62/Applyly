@@ -103,19 +103,19 @@ export class FormStateMachine {
       await this.fillCurrentPage()
       if ((this.status as MachineStatus) === 'paused') break
 
-      if (isLastPage()) {
-        this.complete()
-        break
-      }
+      const lastPage = isLastPage()
+      const nextBtn = lastPage ? null : findNextButton()
 
-      const nextBtn = findNextButton()
-      if (!nextBtn) { this.complete(); break }
-
-      // Semi-auto: notify panel and wait for user to click Next
+      // Semi-auto: always verify the current page before advancing or completing
       if (!this.autoAdvance) {
         this.send({ type: 'PAGE_FILL_COMPLETE', currentPage: this.currentPage, totalPages: this.totalPages })
         await this.waitForUserAdvance()
         if ((this.status as MachineStatus) === 'paused') break
+      }
+
+      if (lastPage || !nextBtn) {
+        this.complete()
+        break
       }
 
       const prevFields = getNonRadioFillableFields()
