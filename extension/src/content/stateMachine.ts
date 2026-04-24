@@ -22,7 +22,8 @@ const NEXT_BTN_SELECTORS = [
   'button.artdeco-button--primary[aria-label*="next" i]',
   // Greenhouse
   '[data-submits] input[type="submit"]',
-  // Indeed
+  // Indeed Apply flow (continue-button appears on every step including questions page)
+  'button[data-testid="continue-button"]',
   'button[data-testid="next-button"]',
   '.ia-continueButton',
   // Generic
@@ -102,6 +103,9 @@ export class FormStateMachine {
 
       await this.fillCurrentPage()
       if ((this.status as MachineStatus) === 'paused') break
+
+      // Allow SPA to react to field changes (e.g. Indeed shows Continue button after selects are filled)
+      await this.delay(500)
 
       const lastPage = isLastPage()
       const nextBtn = lastPage ? null : findNextButton()
