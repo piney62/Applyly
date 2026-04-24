@@ -387,6 +387,8 @@ export function getNonRadioFillableFields(): HTMLElement[] {
     'input[type="number"]:not([disabled]):not([readonly])',
     'input[type="date"]:not([disabled]):not([readonly])',
     'input[type="checkbox"]:not([disabled])',
+    // Inputs with no explicit type default to "text" — Indeed uses these for postal code, address, etc.
+    'input:not([type]):not([disabled]):not([readonly])',
     'textarea:not([disabled]):not([readonly])',
     'select:not([disabled])',
     '[contenteditable="true"]',
