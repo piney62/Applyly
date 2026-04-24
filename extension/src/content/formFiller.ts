@@ -168,23 +168,27 @@ async function fillTextField(
   resume: ResumeData,
   getAI: GetAIAnswer,
 ): Promise<FillResult | null> {
-  // Skip already-filled fields — don't overwrite data the site pre-populated
-  if (el.value?.trim()) return null
-
   const label = getInputLabel(el)
-  let value: string | undefined
-  let isAI = false
 
   if (isOpenEnded(label)) {
-    value = await getAI(label)
-    isAI = true
-  } else {
-    value = mapResumeField(label, resume)
+    // Don't overwrite user-typed content in open-ended fields
+    if (el.value?.trim()) return { label, value: el.value.trim(), isAI: false }
+    const value = await getAI(label)
+    if (!value) return null
+    setNativeValue(el, value)
+    return { label, value, isAI: true }
   }
-  if (!value) return null
 
+  const value = mapResumeField(label, resume)
+
+  if (!value) {
+    // No resume mapping — report as pre-filled if it has content, else skip
+    return el.value?.trim() ? { label, value: el.value.trim(), isAI: false } : null
+  }
+
+  // Always fill with the correct mapped value (fixes sites that pre-fill full name in both first/last fields)
   setNativeValue(el, value)
-  return { label, value, isAI }
+  return { label, value, isAI: false }
 }
 
 async function fillSelectField(
@@ -192,8 +196,10 @@ async function fillSelectField(
   resume: ResumeData,
   getAI: GetAIAnswer,
 ): Promise<FillResult | null> {
-  // Skip if a non-default option is already selected
-  if (el.selectedIndex > 0) return null
+  // Report already-selected options as filled without touching them
+  if (el.selectedIndex > 0) {
+    return { label: getInputLabel(el), value: el.options[el.selectedIndex].text, isAI: false }
+  }
 
   const label = getInputLabel(el)
   const options = Array.from(el.options).filter((o) => o.value).map((o) => o.text.trim())
