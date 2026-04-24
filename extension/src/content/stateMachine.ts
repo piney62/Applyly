@@ -94,6 +94,12 @@ export class FormStateMachine {
     this.notifyPageChange()
 
     while (this.status === 'filling') {
+      // Resume selection page: handle upload + navigation entirely here
+      if (document.querySelector('[data-testid="resume-selection-form"]')) {
+        const handled = await this.handleResumeSelectionPage()
+        if (handled) continue
+      }
+
       await this.fillCurrentPage()
       if ((this.status as MachineStatus) === 'paused') break
 
@@ -135,8 +141,10 @@ export class FormStateMachine {
   // ── Page filling ────────────────────────────────────────────────────────────
 
   private async handleResumeSelectionPage(): Promise<boolean> {
-    if (!document.querySelector('[data-testid="resume-selection-form"]')) return false
     if (!this.resumeData.id) return false
+
+    // Notify panel of this page's single field
+    this.send({ type: 'PAGE_FIELDS_DETECTED', labels: ['Resume'], currentPage: this.currentPage })
 
     const fileData = await new Promise<{ filename: string; content_type: string; content_base64: string } | null>(
       (resolve) => {
@@ -154,7 +162,6 @@ export class FormStateMachine {
     if (!fileData) return false
 
     // Inject directly into the hidden file input — no button clicks needed
-    // (clicking Upload button triggers native file picker dialog)
     const fileInput = document.querySelector<HTMLInputElement>('input[type="file"][data-testid="resume-selection-file-resume-radio-card-file-input"]')
       ?? document.querySelector<HTMLInputElement>('input[type="file"]')
     if (!fileInput) return false
@@ -169,20 +176,45 @@ export class FormStateMachine {
     fileInput.files = dt.files
     fileInput.dispatchEvent(new Event('change', { bubbles: true }))
 
-    this.send({
-      type: 'FIELD_FILLED',
-      fieldLabel: 'Resume',
-      value: fileData.filename,
-      isAI: false,
-      pageIndex: this.currentPage,
+    this.send({ type: 'FIELD_FILLED', fieldLabel: 'Resume', value: fileData.filename, isAI: false, pageIndex: this.currentPage })
+
+    await this.delay(2000) // wait for Indeed to process the upload
+
+    // Semi-auto: show verification button and wait for user
+    if (!this.autoAdvance) {
+      this.send({ type: 'PAGE_FILL_COMPLETE', currentPage: this.currentPage, totalPages: this.totalPages })
+      await this.waitForUserAdvance()
+      if ((this.status as MachineStatus) === 'paused') return true
+    }
+
+    // Click Continue and wait for the resume form to disappear
+    const continueBtn = document.querySelector<HTMLButtonElement>('[data-testid="continue-button"]')
+      ?? document.querySelector<HTMLButtonElement>('[data-testid="hp-continue-button-0"]')
+    if (!continueBtn) return true
+
+    this.status = 'navigating'
+    continueBtn.click()
+    this.currentPage++
+    this.notifyPageChange()
+
+    // Wait for resume-selection-form to leave the DOM
+    await new Promise<void>((resolve) => {
+      this.observer?.disconnect()
+      this.observer = new MutationObserver(() => {
+        if (!document.querySelector('[data-testid="resume-selection-form"]')) {
+          this.observer?.disconnect()
+          setTimeout(resolve, 400)
+        }
+      })
+      this.observer.observe(document.body, { childList: true, subtree: true })
+      setTimeout(() => { this.observer?.disconnect(); resolve() }, 8000)
     })
 
-    await this.delay(1500) // wait for Indeed to process the upload
+    if ((this.status as MachineStatus) !== 'paused') this.status = 'filling'
     return true
   }
 
   private async fillCurrentPage() {
-    if (await this.handleResumeSelectionPage()) return
 
     const radioGroups = getRadioGroups()
     const fields = getNonRadioFillableFields()
