@@ -93,8 +93,7 @@ export function App() {
             resume_type: resume?.type ?? 'uploaded',
             cover_letter: coverLetter,
             status: 'applied',
-          }).catch(() => { /* non-fatal */ })
-          setScreen('S08')
+          }).then(() => setScreen('S08')).catch(() => setScreen('S08'))
           break
         }
       }
