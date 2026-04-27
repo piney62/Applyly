@@ -2,7 +2,7 @@ import { create } from 'zustand'
 
 export interface DetectedField {
   label: string
-  status: 'pending' | 'filled'
+  status: 'pending' | 'filled' | 'skipped'
   value?: string
   isAI?: boolean
   pageIndex: number
@@ -22,6 +22,7 @@ interface FormState {
   setPage: (current: number, total: number | null) => void
   setStatus: (status: FillStatus) => void
   markFieldFilled: (label: string, pageIndex: number, value: string, isAI: boolean) => void
+  markFieldSkipped: (label: string, pageIndex: number) => void
   updateFieldValue: (label: string, pageIndex: number, value: string) => void
   setAutoAdvance: (v: boolean) => void
   setCoverLetter: (text: string) => void
@@ -58,6 +59,13 @@ export const useFormStore = create<FormState>()((set) => ({
         f.label === label && f.pageIndex === pageIndex
           ? { ...f, status: 'filled', value, isAI }
           : f
+      ),
+    })),
+
+  markFieldSkipped: (label, pageIndex) =>
+    set((s) => ({
+      detectedFields: s.detectedFields.map((f) =>
+        f.label === label && f.pageIndex === pageIndex ? { ...f, status: 'skipped' } : f
       ),
     })),
 

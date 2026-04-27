@@ -25,7 +25,7 @@ export function App() {
   const { isLoggedIn } = useAuthStore()
   const { masterResume } = useResumeStore()
   const setDetectedJob = useJobStore((s) => s.setDetected)
-  const { addPageFields, setPage, setStatus: setFormStatus, markFieldFilled } = useFormStore()
+  const { addPageFields, setPage, setStatus: setFormStatus, markFieldFilled, markFieldSkipped } = useFormStore()
 
   const [screen, setScreen] = useState<Screen>(() => {
     if (!isLoggedIn) return 'S00'
@@ -67,6 +67,10 @@ export function App() {
           markFieldFilled(label, pageIndex, value, isAI)
           break
         }
+
+        case 'FIELD_SKIPPED':
+          markFieldSkipped(message.fieldLabel as string, (message.pageIndex as number) ?? 1)
+          break
 
         case 'PAGE_CHANGED':
           setPage(message.currentPage as number, message.totalPages as number | null)

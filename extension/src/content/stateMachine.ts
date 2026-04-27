@@ -250,11 +250,14 @@ export class FormStateMachine {
     for (const [, inputs] of radioGroups) {
       if (this.status === 'paused') return
       if (inputs[0] && this.filledElements.has(inputs[0])) continue
+      const label = inputs[0] ? (getGroupLabel(inputs[0]) || inputs[0].name || 'Question') : 'Question'
       const result = await fillRadioGroup(inputs, this.resumeData, (q, opts) => this.getAIAnswer(q, opts))
       if (result) {
         if (inputs[0]) this.filledElements.add(inputs[0])
         this.report(result)
         await this.delay(30)
+      } else {
+        this.send({ type: 'FIELD_SKIPPED', fieldLabel: label, pageIndex: this.currentPage })
       }
     }
     if (radioGroups.size > 0) await this.delay(100)
@@ -263,11 +266,14 @@ export class FormStateMachine {
     for (const field of fields) {
       if (this.status === 'paused') return
       if (this.filledElements.has(field)) continue
+      const label = getInputLabel(field as HTMLElement) || 'Field'
       const result = await fillField(field, this.resumeData, (q, opts) => this.getAIAnswer(q, opts))
       if (result) {
         this.filledElements.add(field)
         this.report(result)
         await this.delay(result.isAI ? 0 : 30)
+      } else {
+        this.send({ type: 'FIELD_SKIPPED', fieldLabel: label, pageIndex: this.currentPage })
       }
     }
   }

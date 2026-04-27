@@ -181,18 +181,27 @@ export function S06_FormFilling({ navigate }: Props) {
                     )}
                     {fields.map((field, i) => {
                       const filled = field.status === 'filled'
+                      const skipped = field.status === 'skipped'
                       const key = `${field.label}|${field.pageIndex}`
                       const isEditing = editingKey === key
+
+                      const borderColor = filled
+                        ? (field.isAI ? '#534AB7' : '#1D9E75')
+                        : skipped ? '#EF9F27' : '#D1D5DB'
+                      const bgColor = filled ? '#F9FAFB' : skipped ? '#FFFBF0' : '#FFFFFF'
+                      const bdColor = filled
+                        ? (field.isAI ? '#EEEEF9' : '#E7F6F1')
+                        : skipped ? '#FEF5E7' : '#E5E7EB'
 
                       return (
                         <div
                           key={i}
                           style={{
                             padding: '8px 12px', borderRadius: 8,
-                            background: filled ? '#F9FAFB' : '#FFFFFF',
-                            border: `1px solid ${filled ? (field.isAI ? '#EEEEF9' : '#E7F6F1') : '#E5E7EB'}`,
-                            borderLeft: `3px solid ${filled ? (field.isAI ? '#534AB7' : '#1D9E75') : '#D1D5DB'}`,
-                            opacity: filled ? 1 : 0.65,
+                            background: bgColor,
+                            border: `1px solid ${bdColor}`,
+                            borderLeft: `3px solid ${borderColor}`,
+                            opacity: filled || skipped ? 1 : 0.65,
                             transition: 'all 0.2s',
                           }}
                         >
@@ -220,7 +229,7 @@ export function S06_FormFilling({ navigate }: Props) {
                             /* ── Display mode ── */
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                               <span style={{ fontSize: 14, flexShrink: 0 }}>
-                                {filled ? (field.isAI ? '🤖' : '✅') : '⏳'}
+                                {filled ? (field.isAI ? '🤖' : '✅') : skipped ? '❓' : '⏳'}
                               </span>
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ fontSize: 11, color: '#9CA3AF' }}>{field.label}</div>
@@ -229,13 +238,16 @@ export function S06_FormFilling({ navigate }: Props) {
                                     {field.value}
                                   </div>
                                 )}
+                                {skipped && (
+                                  <div style={{ fontSize: 11, color: '#EF9F27' }}>직접 입력 필요</div>
+                                )}
                               </div>
                               {filled && field.isAI && (
                                 <span style={{ fontSize: 10, background: '#EEEEF9', color: '#534AB7', borderRadius: 4, padding: '2px 5px', fontWeight: 600, flexShrink: 0 }}>
                                   AI
                                 </span>
                               )}
-                              {filled && (
+                              {(filled || skipped) && (
                                 <button
                                   onClick={() => startEdit(field)}
                                   title="Edit this field"
