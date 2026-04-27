@@ -4,6 +4,41 @@ import { ProgBar } from '../components/ProgBar'
 import { Btn } from '../components/Btn'
 import { BottomNav } from '../components/BottomNav'
 import { useFormStore, DetectedField } from '../store/formStore'
+import { useResumeStore } from '../store/resumeStore'
+import { api } from '../api/client'
+
+// Fields that map to profile DB fields — edit triggers update confirmation
+const PROFILE_FIELD_MAP: Record<string, string> = {
+  'first name': 'name',   // will compose with last name
+  'last name': 'name',    // will compose with first name
+  'full name': 'name',
+  'given name': 'name',
+  'family name': 'name',
+  'surname': 'name',
+  'name': 'name',
+  'phone': 'phone',
+  'phone number': 'phone',
+  'mobile': 'phone',
+  'email': 'email',
+  'linkedin': 'linkedin',
+  'postal code': 'postal_code',
+  'zip code': 'postal_code',
+  'zip': 'postal_code',
+  'street address': 'street_address',
+  'city': 'city',
+  'city, state': 'city',
+  'city, region': 'city',
+  'state': 'state',
+  'country': 'country',
+}
+
+function getProfileFieldKey(label: string): string | null {
+  const lc = label.toLowerCase().replace(/\s*\*\s*$/, '').trim()
+  for (const [key, dbField] of Object.entries(PROFILE_FIELD_MAP)) {
+    if (lc.includes(key)) return dbField
+  }
+  return null
+}
 
 interface Props { navigate: (screen: string) => void }
 
@@ -12,9 +47,12 @@ export function S06_FormFilling({ navigate }: Props) {
     currentPage, totalPages, detectedFields, status,
     autoAdvance, setAutoAdvance, setStatus, updateFieldValue,
   } = useFormStore()
+  const selectedResume = useResumeStore((s) => s.selectedResume)
 
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
+  const [profileConfirm, setProfileConfirm] = useState<{ dbField: string; value: string } | null>(null)
+  const [profileUpdating, setProfileUpdating] = useState(false)
 
   function startEdit(field: DetectedField) {
     setEditingKey(`${field.label}|${field.pageIndex}`)
@@ -33,6 +71,21 @@ export function S06_FormFilling({ navigate }: Props) {
     if (tab?.id) {
       chrome.tabs.sendMessage(tab.id, { type: 'USER_EDIT_FIELD', label: field.label, value: editValue })
     }
+    // Check if this is a profile field
+    const dbField = getProfileFieldKey(field.label)
+    if (dbField && selectedResume?.id) {
+      setProfileConfirm({ dbField, value: editValue })
+    }
+  }
+
+  async function confirmProfileUpdate() {
+    if (!profileConfirm || !selectedResume?.id) { setProfileConfirm(null); return }
+    setProfileUpdating(true)
+    try {
+      await api.resume.updateProfile(selectedResume.id, profileConfirm.dbField, profileConfirm.value)
+    } catch { /* non-fatal */ }
+    setProfileUpdating(false)
+    setProfileConfirm(null)
   }
 
   async function handlePause() {
@@ -67,7 +120,7 @@ export function S06_FormFilling({ navigate }: Props) {
   }, {})
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative' }}>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, padding: '16px 24px', gap: 14 }}>
 
         {/* Auto-advance toggle */}
@@ -239,7 +292,7 @@ export function S06_FormFilling({ navigate }: Props) {
                                   </div>
                                 )}
                                 {skipped && (
-                                  <div style={{ fontSize: 11, color: '#EF9F27' }}>직접 입력 필요</div>
+                                  <div style={{ fontSize: 11, color: '#EF9F27' }}>Needs your input</div>
                                 )}
                               </div>
                               {filled && field.isAI && (
@@ -292,6 +345,33 @@ export function S06_FormFilling({ navigate }: Props) {
           </button>
         </div>
       </div>
+      {/* Profile update confirmation overlay */}
+      {profileConfirm && (
+        <div style={{
+          position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.35)',
+          display: 'flex', alignItems: 'flex-end', zIndex: 100,
+        }}>
+          <div style={{
+            width: '100%', background: 'white', borderRadius: '12px 12px 0 0',
+            padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14,
+          }}>
+            <p style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Update your profile?</p>
+            <p style={{ margin: 0, fontSize: 13, color: '#6B7280', lineHeight: 1.5 }}>
+              Save <strong>"{profileConfirm.value}"</strong> to your resume profile
+              ({profileConfirm.dbField.replace(/_/g, ' ')})?
+            </p>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Btn kind="primary" fullWidth disabled={profileUpdating} onClick={confirmProfileUpdate}>
+                {profileUpdating ? <Spinner size={14} color="white" /> : 'Yes, update profile'}
+              </Btn>
+              <Btn kind="secondary" fullWidth onClick={() => setProfileConfirm(null)}>
+                No
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
       <BottomNav active="apply" navigate={navigate} />
     </div>
   )

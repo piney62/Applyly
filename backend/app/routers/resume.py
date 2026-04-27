@@ -2,6 +2,7 @@ import base64
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
@@ -123,6 +124,48 @@ async def download_resume_file(
         "content_type": content_type,
         "content_base64": base64.b64encode(resume.raw_content).decode(),
     }
+
+
+ALLOWED_PROFILE_FIELDS = {
+    "name", "phone", "email", "linkedin",
+    "location", "city", "state", "country", "postal_code", "street_address",
+}
+
+
+class ProfileUpdateIn(BaseModel):
+    resume_id: str
+    field: str
+    value: str
+
+
+@router.patch("/profile")
+async def update_profile_field(
+    body: ProfileUpdateIn,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update a single profile field in parsed_data for the given resume."""
+    if body.field not in ALLOWED_PROFILE_FIELDS:
+        raise HTTPException(status_code=400, detail=f"Field '{body.field}' is not updatable")
+
+    try:
+        rid = uuid.UUID(body.resume_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid resume_id")
+
+    result = await db.execute(
+        select(Resume).where(Resume.id == rid, Resume.user_id == current_user.id)
+    )
+    resume = result.scalar_one_or_none()
+    if not resume:
+        raise HTTPException(status_code=404, detail="Resume not found")
+
+    parsed = dict(resume.parsed_data or {})
+    parsed[body.field] = body.value
+    resume.parsed_data = parsed
+    await db.commit()
+
+    return {"updated": True, "field": body.field, "value": body.value}
 
 
 @router.get("/debug")

@@ -69,6 +69,9 @@ export const api = {
         'GET', `/resume/parsed?resume_id=${encodeURIComponent(resumeId)}`
       ),
 
+    updateProfile: (resumeId: string, field: string, value: string) =>
+      apiCall<{ updated: boolean }>('PATCH', '/resume/profile', { resume_id: resumeId, field, value }),
+
     // File uploads go through direct fetch (FormData can't be relayed via chrome messages)
     upload: async (formData: FormData, token: string) => {
       const res = await fetch(

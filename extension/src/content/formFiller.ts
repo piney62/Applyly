@@ -7,6 +7,11 @@ export interface ResumeData {
   phone?: string
   linkedin?: string
   location?: string
+  city?: string
+  state?: string
+  country?: string
+  postal_code?: string
+  street_address?: string
   summary?: string
   skills?: string[]
   experience?: Array<{ company: string; title: string; start: string; end: string; bullets: string[] }>
@@ -37,8 +42,12 @@ const FIELD_MAP: Record<string, (r: ResumeData) => string | undefined> = {
   'phone number':   (r) => r.phone,
   'current title':  (r) => r.experience?.[0]?.title,
   'current company':(r) => r.experience?.[0]?.company,
-  'street address': (_r) => undefined,   // no street-level data in resume
-  'city, state':    (r) => r.location,   // full "City, ST" location string
+  'street address': (r) => r.street_address,
+  'postal code':    (r) => r.postal_code,
+  'zip code':       (r) => r.postal_code,
+  'zip':            (r) => r.postal_code,
+  'city, state':    (r) => r.city && r.state ? `${r.city}, ${r.state}` : r.location,
+  'city, region':   (r) => r.city && r.state ? `${r.city}, ${r.state}` : r.location,
   'linkedin':       (r) => r.linkedin,
   'location':       (r) => r.location,
   'portfolio':      (r) => r.linkedin,
@@ -46,8 +55,10 @@ const FIELD_MAP: Record<string, (r: ResumeData) => string | undefined> = {
   'mobile':         (r) => r.phone,
   'email':          (r) => r.email,
   'phone':          (r) => r.phone,
-  'city':           (r) => r.location?.split(',')[0]?.trim(),
-  'address':        (r) => r.location,
+  'city':           (r) => r.city ?? r.location?.split(',')[0]?.trim(),
+  'state':          (r) => r.state,
+  'country':        (r) => r.country,
+  'address':        (r) => r.street_address ?? r.location,
   'name':           (r) => r.name,
 }
 
