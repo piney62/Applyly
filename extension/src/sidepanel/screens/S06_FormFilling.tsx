@@ -4,7 +4,6 @@ import { ProgBar } from '../components/ProgBar'
 import { Btn } from '../components/Btn'
 import { BottomNav } from '../components/BottomNav'
 import { useFormStore, DetectedField } from '../store/formStore'
-import { useResumeStore } from '../store/resumeStore'
 import { api } from '../api/client'
 
 // Fields that map to profile DB fields — edit triggers update confirmation
@@ -47,8 +46,6 @@ export function S06_FormFilling({ navigate }: Props) {
     currentPage, totalPages, detectedFields, status,
     autoAdvance, setAutoAdvance, setStatus, updateFieldValue,
   } = useFormStore()
-  const selectedResume = useResumeStore((s) => s.selectedResume)
-
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
   const [profileConfirm, setProfileConfirm] = useState<{ dbField: string; value: string } | null>(null)
@@ -71,18 +68,18 @@ export function S06_FormFilling({ navigate }: Props) {
     if (tab?.id) {
       chrome.tabs.sendMessage(tab.id, { type: 'USER_EDIT_FIELD', label: field.label, value: editValue })
     }
-    // Check if this is a profile field
+    // Check if this is a profile field → prompt user to save to DB
     const dbField = getProfileFieldKey(field.label)
-    if (dbField && selectedResume?.id) {
+    if (dbField) {
       setProfileConfirm({ dbField, value: editValue })
     }
   }
 
   async function confirmProfileUpdate() {
-    if (!profileConfirm || !selectedResume?.id) { setProfileConfirm(null); return }
+    if (!profileConfirm) { setProfileConfirm(null); return }
     setProfileUpdating(true)
     try {
-      await api.resume.updateProfile(selectedResume.id, profileConfirm.dbField, profileConfirm.value)
+      await api.auth.updateProfile(profileConfirm.dbField, profileConfirm.value)
     } catch { /* non-fatal */ }
     setProfileUpdating(false)
     setProfileConfirm(null)

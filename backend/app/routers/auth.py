@@ -77,7 +77,51 @@ class LoginIn(BaseModel):
     password: str
 
 
+ALLOWED_PROFILE_FIELDS = {
+    "name", "phone", "linkedin",
+    "street_address", "city", "state", "country", "postal_code",
+}
+
+
+class ProfileUpdateIn(BaseModel):
+    field: str
+    value: str
+
+
 # ---------- routes ----------
+
+def _user_profile(user: User) -> dict:
+    return {
+        "id": str(user.id),
+        "name": user.name,
+        "email": user.email,
+        "phone": user.phone,
+        "linkedin": user.linkedin,
+        "street_address": user.street_address,
+        "city": user.city,
+        "state": user.state,
+        "country": user.country,
+        "postal_code": user.postal_code,
+    }
+
+
+@router.get("/profile")
+async def get_profile(current_user: User = Depends(get_current_user)):
+    return _user_profile(current_user)
+
+
+@router.patch("/profile")
+async def update_profile(
+    body: ProfileUpdateIn,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if body.field not in ALLOWED_PROFILE_FIELDS:
+        raise HTTPException(status_code=400, detail=f"Field '{body.field}' is not updatable")
+    setattr(current_user, body.field, body.value)
+    await db.commit()
+    return {"updated": True, "field": body.field, "value": body.value}
+
 
 @router.post("/register", status_code=201)
 async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):

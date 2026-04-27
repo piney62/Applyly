@@ -52,25 +52,40 @@ export function S05_ResumeSelect({ navigate }: Props) {
 
     if (!resumeId) { setError('No resume selected'); return }
 
-    // Fetch full parsed resume data for form filling
+    // Fetch resume parsed data and user profile in parallel
     let parsedData: Record<string, unknown> = {}
+    let userProfile: Record<string, unknown> = {}
     try {
-      const res = await api.resume.parsedData(resumeId)
-      parsedData = res.parsed_data ?? {}
+      const [resumeRes, profileRes] = await Promise.allSettled([
+        api.resume.parsedData(resumeId),
+        api.auth.profile(),
+      ])
+      if (resumeRes.status === 'fulfilled') parsedData = resumeRes.value.parsed_data ?? {}
+      if (profileRes.status === 'fulfilled') {
+        const p = profileRes.value
+        // User profile fields override resume fields for contact/address data
+        if (p.phone) userProfile.phone = p.phone
+        if (p.linkedin) userProfile.linkedin = p.linkedin
+        if (p.street_address) userProfile.street_address = p.street_address
+        if (p.city) userProfile.city = p.city
+        if (p.state) userProfile.state = p.state
+        if (p.country) userProfile.country = p.country
+        if (p.postal_code) userProfile.postal_code = p.postal_code
+      }
     } catch {
-      // Non-fatal — form filler will use whatever data is available
+      // Non-fatal
     }
 
     setSelected({ id: resumeId, type: 'uploaded' })
     resetForm()
     setFormStatus('filling')
 
-    // Tell the content script to start filling with full resume data
+    // Tell the content script to start filling — resume data merged with user profile
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
     if (tab?.id) {
       chrome.tabs.sendMessage(tab.id, {
         type: 'START_FILL',
-        resumeData: { id: resumeId, ...parsedData },
+        resumeData: { id: resumeId, ...parsedData, ...userProfile },
         token: token,
         autoAdvance,
       })

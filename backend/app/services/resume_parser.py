@@ -23,12 +23,7 @@ Schema:
   "email": "string",
   "phone": "string",
   "linkedin": "string",
-  "location": "string (full location string, e.g. City, State/Region)",
-  "city": "string (city name only)",
-  "state": "string (state, province, or region)",
-  "country": "string (country name)",
-  "postal_code": "string (zip/postal code if present)",
-  "street_address": "string (street-level address if present)",
+  "location": "string (city and region/state, e.g. Angeles City, Pampanga)",
   "summary": "string",
   "skills": ["string"],
   "experience": [

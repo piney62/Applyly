@@ -55,12 +55,23 @@ export interface AddApplicationIn {
   resume_id?: string; resume_type?: string; cover_letter?: string; status?: string
 }
 
+export interface UserProfile {
+  id: string; name: string; email: string
+  phone?: string; linkedin?: string
+  street_address?: string; city?: string; state?: string
+  country?: string; postal_code?: string
+}
+
 export const api = {
   auth: {
     register: (data: RegisterIn) =>
       apiCall<{ user_id: string; token: string }>('POST', '/auth/register', data),
     login: (data: LoginIn) =>
       apiCall<LoginOut>('POST', '/auth/login', data),
+    profile: () =>
+      apiCall<UserProfile>('GET', '/auth/profile'),
+    updateProfile: (field: string, value: string) =>
+      apiCall<{ updated: boolean }>('PATCH', '/auth/profile', { field, value }),
   },
 
   resume: {
@@ -69,8 +80,6 @@ export const api = {
         'GET', `/resume/parsed?resume_id=${encodeURIComponent(resumeId)}`
       ),
 
-    updateProfile: (resumeId: string, field: string, value: string) =>
-      apiCall<{ updated: boolean }>('PATCH', '/resume/profile', { resume_id: resumeId, field, value }),
 
     // File uploads go through direct fetch (FormData can't be relayed via chrome messages)
     upload: async (formData: FormData, token: string) => {
