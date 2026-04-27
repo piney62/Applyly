@@ -1,5 +1,6 @@
 import { detectPlatform } from './detector'
 import { FormStateMachine } from './stateMachine'
+import { getNonRadioFillableFields, getInputLabel, setNativeValue } from './formFiller'
 
 let machine: FormStateMachine | null = null
 let lastDetectedUrl = ''
@@ -63,6 +64,13 @@ chrome.runtime.onMessage.addListener((message) => {
   }
   if (message.type === 'SET_AUTO_ADVANCE') {
     machine?.setAutoAdvance(message.value as boolean)
+  }
+  if (message.type === 'USER_EDIT_FIELD') {
+    const label = message.label as string
+    const value = message.value as string
+    const fields = getNonRadioFillableFields()
+    const target = fields.find((el) => getInputLabel(el as HTMLElement) === label)
+    if (target) setNativeValue(target as HTMLInputElement | HTMLTextAreaElement, value)
   }
   // ADVANCE_PAGE is forwarded from panel → received by stateMachine's waitForUserAdvance listener
 })

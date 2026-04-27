@@ -150,7 +150,7 @@ function mapResumeField(label: string, resume: ResumeData): string | undefined {
 }
 
 // React-controlled inputs need native setter to trigger onChange
-function setNativeValue(el: HTMLInputElement | HTMLTextAreaElement, value: string) {
+export function setNativeValue(el: HTMLInputElement | HTMLTextAreaElement, value: string) {
   const proto = el instanceof HTMLTextAreaElement
     ? window.HTMLTextAreaElement.prototype
     : window.HTMLInputElement.prototype

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Spinner } from '../components/Spinner'
 import { ProgBar } from '../components/ProgBar'
 import { Btn } from '../components/Btn'
@@ -9,8 +10,30 @@ interface Props { navigate: (screen: string) => void }
 export function S06_FormFilling({ navigate }: Props) {
   const {
     currentPage, totalPages, detectedFields, status,
-    autoAdvance, setAutoAdvance, setStatus,
+    autoAdvance, setAutoAdvance, setStatus, updateFieldValue,
   } = useFormStore()
+
+  const [editingKey, setEditingKey] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState('')
+
+  function startEdit(field: DetectedField) {
+    setEditingKey(`${field.label}|${field.pageIndex}`)
+    setEditValue(field.value ?? '')
+  }
+
+  function cancelEdit() {
+    setEditingKey(null)
+    setEditValue('')
+  }
+
+  async function saveEdit(field: DetectedField) {
+    updateFieldValue(field.label, field.pageIndex, editValue)
+    setEditingKey(null)
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    if (tab?.id) {
+      chrome.tabs.sendMessage(tab.id, { type: 'USER_EDIT_FIELD', label: field.label, value: editValue })
+    }
+  }
 
   async function handlePause() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
@@ -158,11 +181,13 @@ export function S06_FormFilling({ navigate }: Props) {
                     )}
                     {fields.map((field, i) => {
                       const filled = field.status === 'filled'
+                      const key = `${field.label}|${field.pageIndex}`
+                      const isEditing = editingKey === key
+
                       return (
                         <div
                           key={i}
                           style={{
-                            display: 'flex', alignItems: 'center', gap: 10,
                             padding: '8px 12px', borderRadius: 8,
                             background: filled ? '#F9FAFB' : '#FFFFFF',
                             border: `1px solid ${filled ? (field.isAI ? '#EEEEF9' : '#E7F6F1') : '#E5E7EB'}`,
@@ -171,21 +196,55 @@ export function S06_FormFilling({ navigate }: Props) {
                             transition: 'all 0.2s',
                           }}
                         >
-                          <span style={{ fontSize: 14, flexShrink: 0 }}>
-                            {filled ? (field.isAI ? '🤖' : '✅') : '⏳'}
-                          </span>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 11, color: '#9CA3AF' }}>{field.label}</div>
-                            {filled && field.value && (
-                              <div style={{ fontSize: 12, color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {field.value}
+                          {isEditing ? (
+                            /* ── Edit mode ── */
+                            <div>
+                              <div style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 6 }}>{field.label}</div>
+                              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                <input
+                                  autoFocus
+                                  value={editValue}
+                                  onChange={(e) => setEditValue(e.target.value)}
+                                  onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(field); if (e.key === 'Escape') cancelEdit() }}
+                                  style={{
+                                    flex: 1, fontSize: 12, padding: '4px 8px',
+                                    border: '1px solid #534AB7', borderRadius: 6,
+                                    outline: 'none', fontFamily: 'inherit',
+                                  }}
+                                />
+                                <button onClick={() => saveEdit(field)} style={{ background: '#534AB7', color: 'white', border: 'none', borderRadius: 5, padding: '4px 8px', cursor: 'pointer', fontSize: 12 }}>✓</button>
+                                <button onClick={cancelEdit} style={{ background: '#E5E7EB', border: 'none', borderRadius: 5, padding: '4px 8px', cursor: 'pointer', fontSize: 12 }}>✕</button>
                               </div>
-                            )}
-                          </div>
-                          {filled && field.isAI && (
-                            <span style={{ fontSize: 10, background: '#EEEEF9', color: '#534AB7', borderRadius: 4, padding: '2px 5px', fontWeight: 600, flexShrink: 0 }}>
-                              AI
-                            </span>
+                            </div>
+                          ) : (
+                            /* ── Display mode ── */
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <span style={{ fontSize: 14, flexShrink: 0 }}>
+                                {filled ? (field.isAI ? '🤖' : '✅') : '⏳'}
+                              </span>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 11, color: '#9CA3AF' }}>{field.label}</div>
+                                {filled && field.value && (
+                                  <div style={{ fontSize: 12, color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {field.value}
+                                  </div>
+                                )}
+                              </div>
+                              {filled && field.isAI && (
+                                <span style={{ fontSize: 10, background: '#EEEEF9', color: '#534AB7', borderRadius: 4, padding: '2px 5px', fontWeight: 600, flexShrink: 0 }}>
+                                  AI
+                                </span>
+                              )}
+                              {filled && (
+                                <button
+                                  onClick={() => startEdit(field)}
+                                  title="Edit this field"
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#9CA3AF', padding: '2px 4px', flexShrink: 0, lineHeight: 1 }}
+                                >
+                                  ✏️
+                                </button>
+                              )}
+                            </div>
                           )}
                         </div>
                       )

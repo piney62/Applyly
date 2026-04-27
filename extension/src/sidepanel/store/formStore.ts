@@ -22,6 +22,7 @@ interface FormState {
   setPage: (current: number, total: number | null) => void
   setStatus: (status: FillStatus) => void
   markFieldFilled: (label: string, pageIndex: number, value: string, isAI: boolean) => void
+  updateFieldValue: (label: string, pageIndex: number, value: string) => void
   setAutoAdvance: (v: boolean) => void
   setCoverLetter: (text: string) => void
   reset: () => void
@@ -57,6 +58,13 @@ export const useFormStore = create<FormState>()((set) => ({
         f.label === label && f.pageIndex === pageIndex
           ? { ...f, status: 'filled', value, isAI }
           : f
+      ),
+    })),
+
+  updateFieldValue: (label, pageIndex, value) =>
+    set((s) => ({
+      detectedFields: s.detectedFields.map((f) =>
+        f.label === label && f.pageIndex === pageIndex ? { ...f, value } : f
       ),
     })),
 
