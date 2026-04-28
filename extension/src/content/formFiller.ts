@@ -3,6 +3,8 @@
 export interface ResumeData {
   id?: string
   name?: string
+  first_name?: string
+  last_name?: string
   email?: string
   phone?: string
   linkedin?: string
@@ -30,15 +32,16 @@ export type GetAIAnswer = (question: string, options?: string[]) => Promise<stri
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const OPEN_ENDED_TRIGGERS = ['tell', 'describe', 'explain', 'why', 'how', 'what motivated',
-  'share', 'elaborate', 'briefly', 'summary', 'background', 'experience with', 'passion']
+  'share', 'elaborate', 'briefly', 'summary', 'background', 'experience with', 'passion',
+  'cover letter', 'additional information', 'additional comments', 'anything else']
 
 const FIELD_MAP: Record<string, (r: ResumeData) => string | undefined> = {
   'full name':      (r) => r.name,
-  'first name':     (r) => r.name?.split(' ')[0],
-  'last name':      (r) => r.name?.split(' ').slice(1).join(' '),
-  'given name':     (r) => r.name?.split(' ')[0],
-  'family name':    (r) => r.name?.split(' ').slice(1).join(' '),
-  'surname':        (r) => r.name?.split(' ').slice(1).join(' '),
+  'first name':     (r) => r.first_name ?? r.name?.split(' ')[0],
+  'last name':      (r) => r.last_name ?? r.name?.split(' ').slice(1).join(' '),
+  'given name':     (r) => r.first_name ?? r.name?.split(' ')[0],
+  'family name':    (r) => r.last_name ?? r.name?.split(' ').slice(1).join(' '),
+  'surname':        (r) => r.last_name ?? r.name?.split(' ').slice(1).join(' '),
   'phone number':   (r) => r.phone,
   'current title':  (r) => r.experience?.[0]?.title,
   'current company':(r) => r.experience?.[0]?.company,
@@ -306,6 +309,56 @@ async function fillContentEditable(
   return { label, value, isAI: true }
 }
 
+// ── Checkbox group handler (multi-select, one AI call per group) ───────────────
+
+const DEMOGRAPHIC_KEYWORDS = ['ethnic', 'race', 'racial', 'gender', 'disability', 'veteran', 'self-identif']
+
+export async function fillCheckboxGroup(
+  inputs: HTMLInputElement[],
+  _resume: ResumeData,
+  getAI: GetAIAnswer,
+): Promise<FillResult | null> {
+  if (inputs.length === 0) return null
+  const question = getGroupLabel(inputs[0])
+  const options = inputs.map(getOptionLabel)
+
+  // Already answered — report as filled
+  const checked = inputs.filter((i) => i.checked)
+  if (checked.length > 0) {
+    return { label: question, value: checked.map(getOptionLabel).join(', '), isAI: false }
+  }
+
+  const qLc = question.toLowerCase()
+  const isDemographic = DEMOGRAPHIC_KEYWORDS.some((kw) => qLc.includes(kw))
+
+  if (isDemographic) {
+    // Prefer "Prefer not to say" / "Decline" — do NOT spam AI for each ethnicity
+    const preferNot = inputs.find((i) => {
+      const lbl = getOptionLabel(i).toLowerCase()
+      return lbl.includes('prefer not') || lbl.includes('decline') ||
+        lbl.includes('not to say') || lbl.includes('not answer')
+    })
+    if (preferNot) {
+      if (!preferNot.checked) preferNot.click()
+      return { label: question, value: getOptionLabel(preferNot), isAI: false }
+    }
+    // No opt-out option → skip entire group (voluntary, leave unchecked)
+    return null
+  }
+
+  // Non-demographic multi-select: ask AI once
+  const picked = await getAI(question, options)
+  const target = inputs.find((i) =>
+    getOptionLabel(i).toLowerCase().includes(picked.toLowerCase()) ||
+    picked.toLowerCase().includes(getOptionLabel(i).toLowerCase())
+  )
+  if (target) {
+    if (!target.checked) target.click()
+    return { label: question, value: getOptionLabel(target), isAI: true }
+  }
+  return null
+}
+
 // ── Radio group handler (exported for stateMachine) ────────────────────────────
 
 export async function fillRadioGroup(
@@ -321,10 +374,10 @@ export async function fillRadioGroup(
   const qLc = question.toLowerCase()
   let choice: string | null = null
 
-  if (qLc.includes('authorized') || qLc.includes('eligible') || qLc.includes('legal')) {
-    choice = 'no' // safer default for work authorization
+  if (qLc.includes('authorized') || qLc.includes('eligible')) {
+    choice = 'no' // safer default for work authorization questions
   } else if (qLc.includes('sponsorship') || qLc.includes('visa')) {
-    choice = 'yes' // yes, needs sponsorship
+    choice = 'yes' // confirm no sponsorship needed / visa status
   }
 
   // If a radio is already checked, report it as filled without touching it
@@ -389,7 +442,36 @@ export function getRadioGroups(): Map<string, HTMLInputElement[]> {
   return groups
 }
 
+// Groups checkbox inputs that share a name (2+ = a multi-select question, not individual fields)
+export function getCheckboxGroups(): Map<string, HTMLInputElement[]> {
+  const counts = new Map<string, number>()
+  const all = document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]:not([disabled])')
+  for (const cb of all) {
+    if (!cb.name) continue
+    counts.set(cb.name, (counts.get(cb.name) ?? 0) + 1)
+  }
+
+  const groups = new Map<string, HTMLInputElement[]>()
+  for (const cb of all) {
+    if (!cb.name || (counts.get(cb.name) ?? 0) < 2) continue
+    const rect = cb.getBoundingClientRect()
+    if (rect.width === 0 && rect.height === 0) continue
+    if (!groups.has(cb.name)) groups.set(cb.name, [])
+    groups.get(cb.name)!.push(cb)
+  }
+  return groups
+}
+
 export function getNonRadioFillableFields(): HTMLElement[] {
+  // Checkboxes that share a name are handled as groups — exclude them here
+  const groupedCheckboxNames = new Set<string>()
+  const counts = new Map<string, number>()
+  for (const cb of document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]:not([disabled])')) {
+    if (!cb.name) continue
+    counts.set(cb.name, (counts.get(cb.name) ?? 0) + 1)
+  }
+  for (const [name, n] of counts) if (n >= 2) groupedCheckboxNames.add(name)
+
   const selector = [
     'input[type="text"]:not([disabled]):not([readonly])',
     'input[type="email"]:not([disabled]):not([readonly])',
@@ -407,12 +489,12 @@ export function getNonRadioFillableFields(): HTMLElement[] {
   return Array.from(document.querySelectorAll<HTMLElement>(selector)).filter(
     (el) => el.offsetParent !== null || (el as HTMLInputElement).type === 'hidden' === false
   ).filter(
-    // Exclude known invisible/utility fields
     (el) => {
       const name = el.getAttribute('name') ?? ''
       if (name === 'g-recaptcha-response') return false
       if (name.startsWith('g-recaptcha')) return false
-      // Exclude elements with zero dimensions (display:none, visibility:hidden)
+      // Exclude checkboxes that belong to a named multi-select group
+      if ((el as HTMLInputElement).type === 'checkbox' && groupedCheckboxNames.has(name)) return false
       const rect = el.getBoundingClientRect()
       return rect.width > 0 || rect.height > 0
     }

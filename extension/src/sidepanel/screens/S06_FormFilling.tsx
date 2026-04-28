@@ -8,17 +8,16 @@ import { api } from '../api/client'
 
 // Fields that map to profile DB fields — edit triggers update confirmation
 const PROFILE_FIELD_MAP: Record<string, string> = {
-  'first name': 'name',   // will compose with last name
-  'last name': 'name',    // will compose with first name
+  'first name': 'first_name',
+  'given name': 'first_name',
+  'last name': 'last_name',
+  'family name': 'last_name',
+  'surname': 'last_name',
   'full name': 'name',
-  'given name': 'name',
-  'family name': 'name',
-  'surname': 'name',
   'name': 'name',
   'phone': 'phone',
   'phone number': 'phone',
   'mobile': 'phone',
-  'email': 'email',
   'linkedin': 'linkedin',
   'postal code': 'postal_code',
   'zip code': 'postal_code',
@@ -50,6 +49,7 @@ export function S06_FormFilling({ navigate }: Props) {
   const [editValue, setEditValue] = useState('')
   const [profileConfirm, setProfileConfirm] = useState<{ dbField: string; value: string } | null>(null)
   const [profileUpdating, setProfileUpdating] = useState(false)
+  const [profileSaveResult, setProfileSaveResult] = useState<'ok' | 'err' | null>(null)
 
   function startEdit(field: DetectedField) {
     setEditingKey(`${field.label}|${field.pageIndex}`)
@@ -71,6 +71,7 @@ export function S06_FormFilling({ navigate }: Props) {
     // Check if this is a profile field → prompt user to save to DB
     const dbField = getProfileFieldKey(field.label)
     if (dbField) {
+      setProfileSaveResult(null)
       setProfileConfirm({ dbField, value: editValue })
     }
   }
@@ -78,11 +79,15 @@ export function S06_FormFilling({ navigate }: Props) {
   async function confirmProfileUpdate() {
     if (!profileConfirm) { setProfileConfirm(null); return }
     setProfileUpdating(true)
+    setProfileSaveResult(null)
     try {
       await api.auth.updateProfile(profileConfirm.dbField, profileConfirm.value)
-    } catch { /* non-fatal */ }
+      setProfileSaveResult('ok')
+      setTimeout(() => setProfileConfirm(null), 1000)
+    } catch {
+      setProfileSaveResult('err')
+    }
     setProfileUpdating(false)
-    setProfileConfirm(null)
   }
 
   async function handlePause() {
@@ -357,14 +362,22 @@ export function S06_FormFilling({ navigate }: Props) {
               Save <strong>"{profileConfirm.value}"</strong> to your resume profile
               ({profileConfirm.dbField.replace(/_/g, ' ')})?
             </p>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <Btn kind="primary" fullWidth disabled={profileUpdating} onClick={confirmProfileUpdate}>
-                {profileUpdating ? <Spinner size={14} color="white" /> : 'Yes, update profile'}
-              </Btn>
-              <Btn kind="secondary" fullWidth onClick={() => setProfileConfirm(null)}>
-                No
-              </Btn>
-            </div>
+            {profileSaveResult === 'ok' && (
+              <p style={{ margin: 0, fontSize: 13, color: '#1D9E75', fontWeight: 600 }}>✓ Saved successfully</p>
+            )}
+            {profileSaveResult === 'err' && (
+              <p style={{ margin: 0, fontSize: 13, color: '#E24B4A' }}>Failed to save. Please try again.</p>
+            )}
+            {!profileSaveResult && (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Btn kind="primary" fullWidth disabled={profileUpdating} onClick={confirmProfileUpdate}>
+                  {profileUpdating ? <Spinner size={14} color="white" /> : 'Yes, update profile'}
+                </Btn>
+                <Btn kind="secondary" fullWidth onClick={() => setProfileConfirm(null)}>
+                  No
+                </Btn>
+              </div>
+            )}
           </div>
         </div>
       )}

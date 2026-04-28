@@ -78,7 +78,8 @@ class LoginIn(BaseModel):
 
 
 ALLOWED_PROFILE_FIELDS = {
-    "name", "phone", "linkedin",
+    "name", "first_name", "last_name",
+    "phone", "linkedin",
     "street_address", "city", "state", "country", "postal_code",
 }
 
@@ -95,6 +96,8 @@ def _user_profile(user: User) -> dict:
         "id": str(user.id),
         "name": user.name,
         "email": user.email,
+        "first_name": user.first_name,
+        "last_name": user.last_name,
         "phone": user.phone,
         "linkedin": user.linkedin,
         "street_address": user.street_address,

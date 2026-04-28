@@ -64,6 +64,8 @@ export function S05_ResumeSelect({ navigate }: Props) {
       if (profileRes.status === 'fulfilled') {
         const p = profileRes.value
         // User profile fields override resume fields for contact/address data
+        if (p.first_name) userProfile.first_name = p.first_name
+        if (p.last_name) userProfile.last_name = p.last_name
         if (p.phone) userProfile.phone = p.phone
         if (p.linkedin) userProfile.linkedin = p.linkedin
         if (p.street_address) userProfile.street_address = p.street_address

@@ -1,13 +1,16 @@
 import {
   fillField,
   fillRadioGroup,
+  fillCheckboxGroup,
   getRadioGroups,
+  getCheckboxGroups,
   getNonRadioFillableFields,
   getGroupLabel,
   getInputLabel,
   type ResumeData,
   type FillResult,
 } from './formFiller'
+import type { PlatformAdapter } from './adapters/types'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -15,18 +18,8 @@ type MachineStatus = 'armed' | 'filling' | 'navigating' | 'complete' | 'paused'
 
 // ── Next-button detection ──────────────────────────────────────────────────────
 
-const NEXT_BTN_SELECTORS = [
-  // Workday
-  '[data-automation-id="bottom-navigation-next-button"]',
-  // LinkedIn Easy Apply
-  'button.artdeco-button--primary[aria-label*="next" i]',
-  // Greenhouse
-  '[data-submits] input[type="submit"]',
-  // Indeed Apply flow (continue-button appears on every step including questions page)
-  'button[data-testid="continue-button"]',
-  'button[data-testid="next-button"]',
-  '.ia-continueButton',
-  // Generic
+// Generic fallbacks used after platform adapter's own selectors don't match.
+const GENERIC_NEXT_SELECTORS = [
   'button[aria-label="Next" i]',
   'button[aria-label="Continue" i]',
   'input[type="submit"][value*="next" i]',
@@ -44,27 +37,6 @@ function isBtnVisible(btn: HTMLButtonElement): boolean {
   return r.width > 0 && r.height > 0
 }
 
-function findNextButton(): HTMLButtonElement | null {
-  for (const sel of NEXT_BTN_SELECTORS) {
-    const btn = document.querySelector<HTMLButtonElement>(sel)
-    if (btn && isBtnVisible(btn)) return btn
-  }
-  // Fallback: any visible button whose text looks like "next/continue"
-  const buttons = document.querySelectorAll<HTMLButtonElement>('button:not([disabled])')
-  for (const btn of buttons) {
-    const t = btn.innerText?.toLowerCase() ?? ''
-    if ((t.includes('next') || t.includes('continue')) && isBtnVisible(btn)) return btn
-  }
-  return null
-}
-
-function isLastPage(): boolean {
-  const btn = findNextButton()
-  if (!btn) return true
-  const t = (btn.innerText ?? btn.value ?? '').toLowerCase()
-  return SUBMIT_KEYWORDS.some((kw) => t.includes(kw))
-}
-
 // ── FormStateMachine ───────────────────────────────────────────────────────────
 
 type SafeSend = (msg: Record<string, unknown>) => void
@@ -76,13 +48,21 @@ export class FormStateMachine {
   private filledCount = 0
   private aiCount = 0
   private observer: MutationObserver | null = null
+  private adapter: PlatformAdapter
   private resumeData: ResumeData
   private token: string
   private send: SafeSend
   private autoAdvance: boolean
   private filledElements = new WeakSet<HTMLElement>()
 
-  constructor(resumeData: ResumeData, token: string, send: SafeSend, autoAdvance = true) {
+  constructor(
+    adapter: PlatformAdapter,
+    resumeData: ResumeData,
+    token: string,
+    send: SafeSend,
+    autoAdvance = true,
+  ) {
+    this.adapter = adapter
     this.resumeData = resumeData
     this.token = token
     this.send = send
@@ -104,7 +84,10 @@ export class FormStateMachine {
 
     while (this.status === 'filling') {
       // Resume selection page: handle upload + navigation entirely here
-      if (document.querySelector('[data-testid="resume-selection-form"]')) {
+      if (
+        this.adapter.selectors.resumeSelectionForm &&
+        document.querySelector(this.adapter.selectors.resumeSelectionForm)
+      ) {
         const handled = await this.handleResumeSelectionPage()
         if (handled) continue
       }
@@ -115,8 +98,8 @@ export class FormStateMachine {
       // Allow SPA to react to field changes (e.g. Indeed shows Continue button after selects are filled)
       await this.delay(500)
 
-      const lastPage = isLastPage()
-      const nextBtn = lastPage ? null : findNextButton()
+      const lastPage = this.isLastPage()
+      const nextBtn = lastPage ? null : this.findNextButton()
 
       // Semi-auto: always verify the current page before advancing or completing
       if (!this.autoAdvance) {
@@ -130,12 +113,15 @@ export class FormStateMachine {
         break
       }
 
-      // Include first radio of each group so radio-only pages still anchor the transition
+      // Include first element of each group so group-only pages still anchor the transition
       const prevNonRadio = getNonRadioFillableFields()
       const prevRadioFirsts = Array.from(getRadioGroups().values())
         .map((inputs) => inputs[0])
         .filter((el): el is HTMLInputElement => !!el)
-      const prevFields = [...prevNonRadio, ...prevRadioFirsts]
+      const prevCheckboxFirsts = Array.from(getCheckboxGroups().values())
+        .map((inputs) => inputs[0])
+        .filter((el): el is HTMLInputElement => !!el)
+      const prevFields = [...prevNonRadio, ...prevRadioFirsts, ...prevCheckboxFirsts]
 
       this.status = 'navigating'
       nextBtn.click()
@@ -159,6 +145,20 @@ export class FormStateMachine {
   // ── Page filling ────────────────────────────────────────────────────────────
 
   private async handleResumeSelectionPage(): Promise<boolean> {
+    // Adapter may provide a fully custom implementation (e.g. Workday widgets).
+    // Otherwise we use the default flow below, parameterized by adapter.selectors.
+    if (this.adapter.handleResumeSelectionPage) {
+      return this.adapter.handleResumeSelectionPage({
+        resumeData: this.resumeData,
+        token: this.token,
+        send: this.send,
+        delay: this.delay.bind(this),
+        currentPage: this.currentPage,
+        setStatusNavigating: () => { this.status = 'navigating' },
+        observerHook: (o) => { this.observer = o },
+      })
+    }
+
     if (!this.resumeData.id) return false
 
     // Notify panel of this page's single field
@@ -180,7 +180,8 @@ export class FormStateMachine {
     if (!fileData) return false
 
     // Inject directly into the hidden file input — no button clicks needed
-    const fileInput = document.querySelector<HTMLInputElement>('input[type="file"][data-testid="resume-selection-file-resume-radio-card-file-input"]')
+    const fileInputSel = this.adapter.selectors.fileInput
+    const fileInput = (fileInputSel ? document.querySelector<HTMLInputElement>(fileInputSel) : null)
       ?? document.querySelector<HTMLInputElement>('input[type="file"]')
     if (!fileInput) return false
 
@@ -206,8 +207,13 @@ export class FormStateMachine {
     }
 
     // Click Continue and wait for the resume form to disappear
-    const continueBtn = document.querySelector<HTMLButtonElement>('[data-testid="continue-button"]')
-      ?? document.querySelector<HTMLButtonElement>('[data-testid="hp-continue-button-0"]')
+    const resumeContinueSels = this.adapter.selectors.resumePageContinue ?? []
+    let continueBtn: HTMLButtonElement | null = null
+    for (const sel of resumeContinueSels) {
+      continueBtn = document.querySelector<HTMLButtonElement>(sel)
+      if (continueBtn) break
+    }
+    continueBtn = continueBtn ?? this.findNextButton()
     if (!continueBtn) return true
 
     this.status = 'navigating'
@@ -216,10 +222,11 @@ export class FormStateMachine {
     this.notifyPageChange()
 
     // Wait for resume-selection-form to leave the DOM
+    const resumeFormSel = this.adapter.selectors.resumeSelectionForm
     await new Promise<void>((resolve) => {
       this.observer?.disconnect()
       this.observer = new MutationObserver(() => {
-        if (!document.querySelector('[data-testid="resume-selection-form"]')) {
+        if (!resumeFormSel || !document.querySelector(resumeFormSel)) {
           this.observer?.disconnect()
           setTimeout(resolve, 400)
         }
@@ -234,11 +241,15 @@ export class FormStateMachine {
 
   private async fillCurrentPage() {
 
+    const checkboxGroups = getCheckboxGroups()
     const radioGroups = getRadioGroups()
     const fields = getNonRadioFillableFields()
 
     // Notify panel of all fields detected on this page
     const allLabels = [
+      ...Array.from(checkboxGroups.values()).map((inputs) =>
+        inputs[0] ? (getGroupLabel(inputs[0]) || inputs[0].name || 'Question') : 'Question'
+      ),
       ...Array.from(radioGroups.values()).map((inputs) =>
         inputs[0] ? (getGroupLabel(inputs[0]) || inputs[0].name || 'Question') : 'Question'
       ),
@@ -246,7 +257,22 @@ export class FormStateMachine {
     ].filter(Boolean)
     this.send({ type: 'PAGE_FIELDS_DETECTED', labels: allLabels, currentPage: this.currentPage })
 
-    // Pass 1: radio groups (track by first input element)
+    // Pass 1: checkbox groups — one AI call per group, not per checkbox
+    for (const [, inputs] of checkboxGroups) {
+      if (this.status === 'paused') return
+      if (inputs[0] && this.filledElements.has(inputs[0])) continue
+      const label = inputs[0] ? (getGroupLabel(inputs[0]) || inputs[0].name || 'Question') : 'Question'
+      const result = await fillCheckboxGroup(inputs, this.resumeData, (q, opts) => this.getAIAnswer(q, opts))
+      if (result) {
+        if (inputs[0]) this.filledElements.add(inputs[0])
+        this.report(result)
+        await this.delay(30)
+      } else {
+        this.send({ type: 'FIELD_SKIPPED', fieldLabel: label, pageIndex: this.currentPage })
+      }
+    }
+
+    // Pass 2: radio groups (track by first input element)
     for (const [, inputs] of radioGroups) {
       if (this.status === 'paused') return
       if (inputs[0] && this.filledElements.has(inputs[0])) continue
@@ -262,7 +288,7 @@ export class FormStateMachine {
     }
     if (radioGroups.size > 0) await this.delay(100)
 
-    // Pass 2: other fields — skip already-filled elements
+    // Pass 3: other fields — skip already-filled elements
     for (const field of fields) {
       if (this.status === 'paused') return
       if (this.filledElements.has(field)) continue
@@ -298,16 +324,19 @@ export class FormStateMachine {
 
   /** ARMED → FILLING: wait until form fields appear in DOM */
   private waitForForm(): Promise<void> {
+    const hasAnyFields = () =>
+      getNonRadioFillableFields().length > 0 ||
+      getRadioGroups().size > 0 ||
+      getCheckboxGroups().size > 0
+
     return new Promise((resolve) => {
-      if (getNonRadioFillableFields().length > 0 || getRadioGroups().size > 0) {
+      if (hasAnyFields()) {
         resolve()
         return
       }
       this.observer?.disconnect()
       this.observer = new MutationObserver(() => {
-        const hasFields =
-          getNonRadioFillableFields().length > 0 || getRadioGroups().size > 0
-        if (hasFields) {
+        if (hasAnyFields()) {
           this.observer?.disconnect()
           setTimeout(resolve, 500) // settle
         }
@@ -326,7 +355,9 @@ export class FormStateMachine {
       const check = (): boolean => {
         const prevGone = prevFields.length === 0 || prevFields.every((f) => !document.contains(f))
         if (!prevGone) return false
-        return getNonRadioFillableFields().length > 0 || getRadioGroups().size > 0
+        return getNonRadioFillableFields().length > 0 ||
+          getRadioGroups().size > 0 ||
+          getCheckboxGroups().size > 0
       }
 
       // Resolve immediately if new page is already fully rendered
@@ -342,6 +373,30 @@ export class FormStateMachine {
       // Hard timeout — proceed even if detection fails
       setTimeout(() => { this.observer?.disconnect(); resolve() }, 8000)
     })
+  }
+
+  // ── Button detection (adapter-aware) ────────────────────────────────────────
+
+  private findNextButton(): HTMLButtonElement | null {
+    const adapterSels = this.adapter.selectors.nextButton ?? []
+    for (const sel of [...adapterSels, ...GENERIC_NEXT_SELECTORS]) {
+      const btn = document.querySelector<HTMLButtonElement>(sel)
+      if (btn && isBtnVisible(btn)) return btn
+    }
+    // Fallback: any visible button whose text looks like "next/continue"
+    const buttons = document.querySelectorAll<HTMLButtonElement>('button:not([disabled])')
+    for (const btn of buttons) {
+      const t = btn.innerText?.toLowerCase() ?? ''
+      if ((t.includes('next') || t.includes('continue')) && isBtnVisible(btn)) return btn
+    }
+    return null
+  }
+
+  private isLastPage(): boolean {
+    const btn = this.findNextButton()
+    if (!btn) return true
+    const t = (btn.innerText ?? btn.value ?? '').toLowerCase()
+    return SUBMIT_KEYWORDS.some((kw) => t.includes(kw))
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────────

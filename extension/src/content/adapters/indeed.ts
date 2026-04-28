@@ -1,4 +1,5 @@
 import type { JobInfo } from '../detector'
+import type { PlatformAdapter } from './types'
 
 // innerText skips <style>/<script> content; textContent does not
 function text(el: Element | null): string {
@@ -43,10 +44,13 @@ function indeedDescription(): string {
   )
 }
 
-export const indeedAdapter = {
+export const indeedAdapter: PlatformAdapter = {
+  name: 'Indeed',
   detect: (url: string) =>
     url.includes('indeed.com/viewjob') ||
     url.includes('indeed.com/jobs') ||
+    url.includes('apply.indeed.com') ||
+    url.includes('indeed.com/apply') ||
     (url.includes('indeed.com') && url.includes('vjk=')),
   extract: (): JobInfo => ({
     platform: 'Indeed',
@@ -55,4 +59,19 @@ export const indeedAdapter = {
     jobUrl: window.location.href,
     jobDescription: indeedDescription(),
   }),
+  selectors: {
+    // Indeed Apply flow — continue-button appears on every step including questions page
+    nextButton: [
+      'button[data-testid="continue-button"]',
+      'button[data-testid="next-button"]',
+      '.ia-continueButton',
+    ],
+    resumeSelectionForm: '[data-testid="resume-selection-form"]',
+    fileInput: 'input[type="file"][data-testid="resume-selection-file-resume-radio-card-file-input"]',
+    resumePageContinue: [
+      '[data-testid="continue-button"]',
+      '[data-testid="hp-continue-button-0"]',
+    ],
+    confirmationText: ['application has been submitted'],
+  },
 }

@@ -14,6 +14,10 @@ class User(Base):
     password_hash = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
+    # Name split (first/last stored separately so they can fill individual fields)
+    first_name = Column(String, nullable=True)
+    last_name = Column(String, nullable=True)
+
     # Contact & address profile (stored separately from resume)
     phone = Column(String, nullable=True)
     linkedin = Column(String, nullable=True)

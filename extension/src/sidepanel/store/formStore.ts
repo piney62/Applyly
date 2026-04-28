@@ -72,7 +72,9 @@ export const useFormStore = create<FormState>()((set) => ({
   updateFieldValue: (label, pageIndex, value) =>
     set((s) => ({
       detectedFields: s.detectedFields.map((f) =>
-        f.label === label && f.pageIndex === pageIndex ? { ...f, value } : f
+        f.label === label && f.pageIndex === pageIndex
+          ? { ...f, value, status: 'filled', isAI: false }
+          : f
       ),
     })),
 

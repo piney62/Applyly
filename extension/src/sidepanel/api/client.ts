@@ -57,6 +57,7 @@ export interface AddApplicationIn {
 
 export interface UserProfile {
   id: string; name: string; email: string
+  first_name?: string; last_name?: string
   phone?: string; linkedin?: string
   street_address?: string; city?: string; state?: string
   country?: string; postal_code?: string

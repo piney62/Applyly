@@ -2,6 +2,7 @@ import { indeedAdapter } from './adapters/indeed'
 import { workdayAdapter } from './adapters/workday'
 import { greenhouseAdapter } from './adapters/greenhouse'
 import { leverAdapter } from './adapters/lever'
+import type { PlatformAdapter } from './adapters/types'
 
 export interface JobInfo {
   platform: string
@@ -11,7 +12,7 @@ export interface JobInfo {
   jobDescription: string
 }
 
-const adapters = [indeedAdapter, workdayAdapter, greenhouseAdapter, leverAdapter]
+const adapters: PlatformAdapter[] = [indeedAdapter, workdayAdapter, greenhouseAdapter, leverAdapter]
 
 export function detectPlatform(): JobInfo | null {
   const url = window.location.href
@@ -25,4 +26,9 @@ export function detectPlatform(): JobInfo | null {
     }
   }
   return null
+}
+
+// Pick the adapter that owns this URL (used by stateMachine for form-filling overrides)
+export function findAdapter(url: string): PlatformAdapter | null {
+  return adapters.find((a) => a.detect(url)) ?? null
 }
