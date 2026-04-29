@@ -493,12 +493,105 @@ export function getNonRadioFillableFields(): HTMLElement[] {
       const name = el.getAttribute('name') ?? ''
       if (name === 'g-recaptcha-response') return false
       if (name.startsWith('g-recaptcha')) return false
+      // Combobox inputs that are part of a .select__container (Lever / React Select pattern)
+      // are handled by fillReactSelectField — skip them here.
+      // Inputs with role="combobox" outside .select__container (e.g. Indeed autocomplete) are
+      // left in so they continue to be filled as text fields.
+      if (el.getAttribute('role') === 'combobox' && el.closest('.select__container')) return false
+      // React Select's hidden required-field sentinel: aria-hidden + no name
+      if (el.getAttribute('aria-hidden') === 'true' && !(el as HTMLInputElement).name) return false
+      if (el.getAttribute('tabindex') === '-1' && !(el as HTMLInputElement).name) return false
       // Exclude checkboxes that belong to a named multi-select group
       if ((el as HTMLInputElement).type === 'checkbox' && groupedCheckboxNames.has(name)) return false
       const rect = el.getBoundingClientRect()
       return rect.width > 0 || rect.height > 0
     }
   )
+}
+
+// ── React Select (custom combobox) handler ─────────────────────────────────────
+
+export function getReactSelectContainers(): HTMLElement[] {
+  return Array.from(document.querySelectorAll<HTMLElement>('.select__container')).filter((c) => {
+    if (!c.querySelector('input[role="combobox"]')) return false
+    const rect = c.getBoundingClientRect()
+    return rect.width > 0 && rect.height > 0
+  })
+}
+
+export function getReactSelectLabel(container: HTMLElement): string {
+  const label = container.querySelector('label')
+  if (!label) return ''
+  return ((label as HTMLElement).innerText?.trim() || label.textContent?.trim() || '')
+    .replace(/\s*\*\s*$/, '').trim()
+}
+
+export async function fillReactSelectField(
+  container: HTMLElement,
+  resume: ResumeData,
+  getAI: GetAIAnswer,
+): Promise<FillResult | null> {
+  const label = getReactSelectLabel(container)
+
+  // Already selected
+  const singleValue = container.querySelector('.select__single-value')
+  if (singleValue?.textContent?.trim()) {
+    return { label, value: singleValue.textContent.trim(), isAI: false }
+  }
+
+  const control = container.querySelector<HTMLElement>('.select__control')
+  if (!control) return null
+
+  // React Select opens on mousedown. Dispatch it explicitly before click()
+  // so Greenhouse's custom toggle button variant also responds correctly.
+  control.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }))
+  control.click()
+
+  // Poll up to 800ms for the menu (Greenhouse uses CSS entry animations)
+  let menu: HTMLElement | null = null
+  for (let i = 0; i < 8; i++) {
+    await new Promise<void>((r) => setTimeout(r, 100))
+    menu = container.querySelector<HTMLElement>('.select__menu') ?? null
+    if (!menu) {
+      // Menu may be portalled to body — find the visible one
+      const menus = Array.from(document.querySelectorAll<HTMLElement>('.select__menu'))
+      menu = menus.find((m) => { const r = m.getBoundingClientRect(); return r.width > 0 && r.height > 0 }) ?? null
+    }
+    if (menu) break
+  }
+
+  if (!menu) { document.body.click(); return null }
+
+  const optionEls = Array.from(menu.querySelectorAll<HTMLElement>('.select__option'))
+  const optionTexts = optionEls.map((o) => o.textContent?.trim() ?? '').filter(Boolean)
+  if (optionTexts.length === 0) { document.body.click(); return null }
+
+  // Resume mapping — verify it actually matches an option before trusting it
+  let targetText = mapResumeField(label, resume)
+  let fromResume = !!targetText
+  if (targetText) {
+    const hasMatch = optionEls.some((o) => {
+      const t = (o.textContent?.trim() ?? '').toLowerCase()
+      const v = targetText!.toLowerCase()
+      return t.includes(v) || v.includes(t)
+    })
+    if (!hasMatch) { targetText = undefined; fromResume = false }
+  }
+
+  if (!targetText) targetText = await getAI(label, optionTexts)
+  if (!targetText) { document.body.click(); return null }
+
+  const match = optionEls.find((o) => {
+    const t = (o.textContent?.trim() ?? '').toLowerCase()
+    const v = targetText!.toLowerCase()
+    return t.includes(v) || v.includes(t)
+  })
+
+  if (!match) { document.body.click(); return null }
+
+  match.click()
+  await new Promise<void>((r) => setTimeout(r, 100))
+  return { label, value: match.textContent?.trim() ?? targetText, isAI: !fromResume }
 }
 
 // Legacy export kept for compatibility

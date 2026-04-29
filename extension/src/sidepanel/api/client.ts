@@ -106,6 +106,12 @@ export const api = {
       }
       return res.json() as Promise<{ temp_resume_id: string }>
     },
+
+    tailor: (resumeId: string, jobDescriptionText: string) =>
+      apiCall<{ resume_id: string; ats_before: number; ats_after: number }>(
+        'POST', '/resume/tailor',
+        { resume_id: resumeId, job_description_text: jobDescriptionText }
+      ),
   },
 
   jobs: {

@@ -1,6 +1,6 @@
 import { detectPlatform, findAdapter } from './detector'
 import { FormStateMachine } from './stateMachine'
-import { getNonRadioFillableFields, getInputLabel, setNativeValue } from './formFiller'
+import { getNonRadioFillableFields, getInputLabel, setNativeValue, getRadioGroups, getCheckboxGroups, getGroupLabel } from './formFiller'
 import type { PlatformAdapter } from './adapters/types'
 
 let machine: FormStateMachine | null = null
@@ -100,6 +100,31 @@ chrome.runtime.onMessage.addListener((message) => {
     const fields = getNonRadioFillableFields()
     const target = fields.find((el) => getInputLabel(el as HTMLElement) === label)
     if (target) setNativeValue(target as HTMLInputElement | HTMLTextAreaElement, value)
+  }
+  if (message.type === 'SCROLL_TO_FIELD') {
+    const label = message.label as string
+    let target: HTMLElement | null = null
+
+    const fields = getNonRadioFillableFields()
+    target = (fields.find((el) => getInputLabel(el as HTMLElement) === label) as HTMLElement) ?? null
+
+    if (!target) {
+      for (const [, inputs] of getRadioGroups()) {
+        if (inputs[0] && getGroupLabel(inputs[0]) === label) { target = inputs[0]; break }
+      }
+    }
+    if (!target) {
+      for (const [, inputs] of getCheckboxGroups()) {
+        if (inputs[0] && getGroupLabel(inputs[0]) === label) { target = inputs[0]; break }
+      }
+    }
+
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      const prev = target.style.outline
+      target.style.outline = '2px solid #534AB7'
+      setTimeout(() => { if (target) target.style.outline = prev }, 2000)
+    }
   }
   // ADVANCE_PAGE is forwarded from panel → received by stateMachine's waitForUserAdvance listener
 })

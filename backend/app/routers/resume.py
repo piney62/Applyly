@@ -2,6 +2,7 @@ import base64
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
@@ -12,6 +13,7 @@ from app.models.user import User
 from app.routers.auth import get_current_user
 from app.services.ai_service import AIService, get_ai_service
 from app.services.resume_parser import extract_text_from_docx, structure_resume
+from app.services.resume_tailor import tailor_resume
 
 router = APIRouter()
 
@@ -125,6 +127,61 @@ async def download_resume_file(
     }
 
 
+
+
+class TailorRequest(BaseModel):
+    resume_id: str
+    job_description_text: str
+
+
+@router.post("/tailor")
+async def tailor_resume_endpoint(
+    body: TailorRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate an ATS-optimised version of the user's resume for the given JD.
+
+    Runs the resume-tailor pipeline (parse → AI rewrite → apply) and saves the
+    result as a new Resume record. Returns the new resume_id plus ATS scores.
+    """
+    try:
+        rid = uuid.UUID(body.resume_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid resume_id")
+
+    result = await db.execute(
+        select(Resume).where(Resume.id == rid, Resume.user_id == current_user.id)
+    )
+    resume = result.scalar_one_or_none()
+    if not resume or not resume.raw_content:
+        raise HTTPException(status_code=404, detail="Resume not found or has no file content")
+
+    try:
+        tailored_bytes, ats_before, ats_after = await tailor_resume(
+            resume.raw_content, body.job_description_text
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    # Save tailored resume as a new record; copy parsed_data (contact info is unchanged)
+    original_name = resume.original_filename or "resume.docx"
+    tailored = Resume(
+        user_id=current_user.id,
+        raw_content=tailored_bytes,
+        original_filename=f"tailored_{original_name}",
+        raw_text=resume.raw_text,
+        parsed_data=resume.parsed_data,
+    )
+    db.add(tailored)
+    await db.commit()
+    await db.refresh(tailored)
+
+    return {
+        "resume_id": str(tailored.id),
+        "ats_before": ats_before,
+        "ats_after": ats_after,
+    }
 
 
 @router.get("/debug")

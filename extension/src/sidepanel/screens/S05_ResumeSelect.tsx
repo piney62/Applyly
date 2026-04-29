@@ -6,11 +6,14 @@ import { api } from '../api/client'
 import { useAuthStore } from '../store/authStore'
 import { useResumeStore } from '../store/resumeStore'
 import { useFormStore } from '../store/formStore'
+import { useJobStore } from '../store/jobStore'
 
 interface Props { navigate: (screen: string) => void }
 
 export function S05_ResumeSelect({ navigate }: Props) {
+  const [selectedCard, setSelectedCard] = useState<'own' | 'tailored'>('own')
   const [uploading, setUploading] = useState(false)
+  const [tailoring, setTailoring] = useState(false)
   const [saveAsDefault, setSaveAsDefault] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [error, setError] = useState('')
@@ -23,12 +26,32 @@ export function S05_ResumeSelect({ navigate }: Props) {
   const resetForm = useFormStore((s) => s.reset)
   const setFormStatus = useFormStore((s) => s.setStatus)
   const autoAdvance = useFormStore((s) => s.autoAdvance)
+  const detectedJob = useJobStore((s) => s.detectedJob)
+
+  const canTailor = !!(masterResume && detectedJob?.jobDescription)
 
   async function handleContinue() {
     setError('')
     let resumeId = masterResume?.id ?? ''
 
-    if (selectedFile) {
+    if (selectedCard === 'tailored') {
+      // Card B: AI-tailor the master resume to the detected JD
+      if (!masterResume || !detectedJob?.jobDescription) {
+        setError('Master resume and a detected job are required for AI tailoring')
+        return
+      }
+      setTailoring(true)
+      try {
+        const res = await api.resume.tailor(masterResume.id, detectedJob.jobDescription)
+        resumeId = res.resume_id
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : 'Tailoring failed')
+        setTailoring(false)
+        return
+      }
+      setTailoring(false)
+    } else if (selectedFile) {
+      // Card A with new file upload
       setUploading(true)
       try {
         const fd = new FormData()
@@ -96,7 +119,10 @@ export function S05_ResumeSelect({ navigate }: Props) {
     navigate('S06')
   }
 
-  const canContinue = !!(selectedFile || masterResume)
+  const canContinue = selectedCard === 'tailored'
+    ? canTailor
+    : !!(selectedFile || masterResume)
+  const isBusy = uploading || tailoring
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
@@ -104,12 +130,16 @@ export function S05_ResumeSelect({ navigate }: Props) {
         <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Which resume would you like to use?</h2>
 
         {/* Card A — upload own resume */}
-        <div style={{
-          border: '2px solid #534AB7',
-          borderRadius: 12,
-          padding: 16,
-          background: '#FAFAFA',
-        }}>
+        <div
+          onClick={() => setSelectedCard('own')}
+          style={{
+            border: `2px solid ${selectedCard === 'own' ? '#534AB7' : '#E5E7EB'}`,
+            borderRadius: 12,
+            padding: 16,
+            background: selectedCard === 'own' ? '#FAFAFA' : '#F9FAFB',
+            cursor: 'pointer',
+          }}
+        >
           <p style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Upload my own resume</p>
           <p style={{ margin: '4px 0 12px', fontSize: 12, color: '#6B7280' }}>Use a resume you've prepared yourself</p>
 
@@ -120,7 +150,7 @@ export function S05_ResumeSelect({ navigate }: Props) {
           )}
 
           <button
-            onClick={() => fileRef.current?.click()}
+            onClick={(e) => { e.stopPropagation(); fileRef.current?.click() }}
             style={{
               background: '#EEEEF9',
               border: '1px dashed #534AB7',
@@ -144,7 +174,10 @@ export function S05_ResumeSelect({ navigate }: Props) {
           />
 
           {selectedFile && (
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 13, cursor: 'pointer' }}>
+            <label
+              onClick={(e) => e.stopPropagation()}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 13, cursor: 'pointer' }}
+            >
               <input
                 type="checkbox"
                 checked={saveAsDefault}
@@ -155,11 +188,38 @@ export function S05_ResumeSelect({ navigate }: Props) {
           )}
         </div>
 
+        {/* Card B — AI-tailored resume */}
+        <div
+          onClick={() => canTailor && setSelectedCard('tailored')}
+          style={{
+            border: `2px solid ${selectedCard === 'tailored' ? '#534AB7' : '#E5E7EB'}`,
+            borderRadius: 12,
+            padding: 16,
+            background: selectedCard === 'tailored' ? '#FAFAFA' : '#F9FAFB',
+            cursor: canTailor ? 'pointer' : 'default',
+            opacity: canTailor ? 1 : 0.5,
+          }}
+        >
+          <p style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Generate ATS-tailored resume</p>
+          <p style={{ margin: '4px 0 0', fontSize: 12, color: '#6B7280' }}>
+            {canTailor
+              ? "AI rewrites your resume to match this job's keywords"
+              : 'Requires a saved resume and a detected job'}
+          </p>
+          {canTailor && (
+            <p style={{ margin: '6px 0 0', fontSize: 11, color: '#9CA3AF' }}>Takes ~20-30 seconds</p>
+          )}
+        </div>
+
         {error && <p style={{ margin: 0, fontSize: 12, color: '#E24B4A' }}>{error}</p>}
 
         <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <Btn kind="primary" fullWidth disabled={!canContinue || uploading} onClick={handleContinue}>
-            {uploading ? <><Spinner size={16} color="white" /> Uploading…</> : 'Continue'}
+          <Btn kind="primary" fullWidth disabled={!canContinue || isBusy} onClick={handleContinue}>
+            {tailoring ? (
+              <><Spinner size={16} color="white" /> Optimizing resume…</>
+            ) : uploading ? (
+              <><Spinner size={16} color="white" /> Uploading…</>
+            ) : 'Continue'}
           </Btn>
           <button
             onClick={() => navigate('S04')}

@@ -61,6 +61,11 @@ export function S06_FormFilling({ navigate }: Props) {
     setEditValue('')
   }
 
+  async function scrollToField(field: DetectedField) {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    if (tab?.id) chrome.tabs.sendMessage(tab.id, { type: 'SCROLL_TO_FIELD', label: field.label })
+  }
+
   async function saveEdit(field: DetectedField) {
     updateFieldValue(field.label, field.pageIndex, editValue)
     setEditingKey(null)
@@ -251,6 +256,7 @@ export function S06_FormFilling({ navigate }: Props) {
                       return (
                         <div
                           key={i}
+                          onClick={!isEditing && (filled || skipped) ? () => scrollToField(field) : undefined}
                           style={{
                             padding: '8px 12px', borderRadius: 8,
                             background: bgColor,
@@ -258,6 +264,7 @@ export function S06_FormFilling({ navigate }: Props) {
                             borderLeft: `3px solid ${borderColor}`,
                             opacity: filled || skipped ? 1 : 0.65,
                             transition: 'all 0.2s',
+                            cursor: !isEditing && (filled || skipped) ? 'pointer' : 'default',
                           }}
                         >
                           {isEditing ? (

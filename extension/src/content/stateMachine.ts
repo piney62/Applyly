@@ -2,8 +2,11 @@ import {
   fillField,
   fillRadioGroup,
   fillCheckboxGroup,
+  fillReactSelectField,
   getRadioGroups,
   getCheckboxGroups,
+  getReactSelectContainers,
+  getReactSelectLabel,
   getNonRadioFillableFields,
   getGroupLabel,
   getInputLabel,
@@ -121,7 +124,8 @@ export class FormStateMachine {
       const prevCheckboxFirsts = Array.from(getCheckboxGroups().values())
         .map((inputs) => inputs[0])
         .filter((el): el is HTMLInputElement => !!el)
-      const prevFields = [...prevNonRadio, ...prevRadioFirsts, ...prevCheckboxFirsts]
+      const prevReactSelects = getReactSelectContainers()
+      const prevFields = [...prevNonRadio, ...prevRadioFirsts, ...prevCheckboxFirsts, ...prevReactSelects]
 
       this.status = 'navigating'
       nextBtn.click()
@@ -241,12 +245,14 @@ export class FormStateMachine {
 
   private async fillCurrentPage() {
 
+    const reactSelects = getReactSelectContainers()
     const checkboxGroups = getCheckboxGroups()
     const radioGroups = getRadioGroups()
     const fields = getNonRadioFillableFields()
 
     // Notify panel of all fields detected on this page
     const allLabels = [
+      ...reactSelects.map((c) => getReactSelectLabel(c) || 'Select'),
       ...Array.from(checkboxGroups.values()).map((inputs) =>
         inputs[0] ? (getGroupLabel(inputs[0]) || inputs[0].name || 'Question') : 'Question'
       ),
@@ -256,6 +262,21 @@ export class FormStateMachine {
       ...fields.map((el) => getInputLabel(el as HTMLElement) || 'Field'),
     ].filter(Boolean)
     this.send({ type: 'PAGE_FIELDS_DETECTED', labels: allLabels, currentPage: this.currentPage })
+
+    // Pass 0: React Select custom combobox dropdowns
+    for (const container of reactSelects) {
+      if (this.status === 'paused') return
+      if (this.filledElements.has(container)) continue
+      const label = getReactSelectLabel(container) || 'Select'
+      const result = await fillReactSelectField(container, this.resumeData, (q, opts) => this.getAIAnswer(q, opts))
+      if (result) {
+        this.filledElements.add(container)
+        this.report(result)
+        await this.delay(100)
+      } else {
+        this.send({ type: 'FIELD_SKIPPED', fieldLabel: label, pageIndex: this.currentPage })
+      }
+    }
 
     // Pass 1: checkbox groups — one AI call per group, not per checkbox
     for (const [, inputs] of checkboxGroups) {
