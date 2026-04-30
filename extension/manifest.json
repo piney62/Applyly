@@ -30,5 +30,11 @@
     "service_worker": "src/background/index.ts",
     "type": "module"
   },
-  "action": {}
+  "action": {},
+  "web_accessible_resources": [
+    {
+      "resources": ["pdf-viewer.html"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }

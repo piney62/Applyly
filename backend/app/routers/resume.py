@@ -14,6 +14,7 @@ from app.routers.auth import get_current_user
 from app.services.ai_service import AIService, get_ai_service
 from app.services.resume_parser import extract_text_from_docx, structure_resume
 from app.services.resume_tailor import tailor_resume
+from app.services.resume_tailor.ai_client import QuotaError
 
 router = APIRouter()
 
@@ -158,10 +159,12 @@ async def tailor_resume_endpoint(
         raise HTTPException(status_code=404, detail="Resume not found or has no file content")
 
     try:
-        tailored_bytes, ats_before, ats_after = await tailor_resume(
+        tailored_bytes, pdf_bytes, ats_before, ats_after = await tailor_resume(
             resume.raw_content, body.job_description_text
         )
-    except RuntimeError as e:
+    except QuotaError as e:
+        raise HTTPException(status_code=503, detail=f"AI provider quota exceeded ({e.provider}). Please try again later.")
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
     # Save tailored resume as a new record; copy parsed_data (contact info is unchanged)
@@ -181,6 +184,7 @@ async def tailor_resume_endpoint(
         "resume_id": str(tailored.id),
         "ats_before": ats_before,
         "ats_after": ats_after,
+        "pdf_base64": base64.b64encode(pdf_bytes).decode() if pdf_bytes else None,
     }
 
 

@@ -108,7 +108,7 @@ export const api = {
     },
 
     tailor: (resumeId: string, jobDescriptionText: string) =>
-      apiCall<{ resume_id: string; ats_before: number; ats_after: number }>(
+      apiCall<{ resume_id: string; ats_before: number; ats_after: number; pdf_base64: string | null }>(
         'POST', '/resume/tailor',
         { resume_id: resumeId, job_description_text: jobDescriptionText }
       ),

@@ -164,16 +164,21 @@ def ai_call(system_prompt: str, user_content: str, gkey: str, qkey: str) -> tupl
 def parse_json(raw: str) -> Any:
     """Strip markdown code fences and parse the AI's JSON response.
 
-    Falls back to extracting the first {â€¦} block if the raw text isn't valid
-    JSON on its own. JSONDecodeError on the fallback propagates to the caller.
+    Uses raw_decode() to extract the first complete JSON object and ignore
+    any extra text the model appended after the closing brace.
     """
     raw = re.sub(r"```json\s*", "", raw)
     raw = re.sub(r"```\s*",     "", raw).strip()
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
-        m = re.search(r"\{.*\}", raw, re.DOTALL)
+        # Find the opening brace and parse only the first complete object,
+        # ignoring whatever the model appended after the closing brace.
+        m = re.search(r"\{", raw)
         if m:
-            return json.loads(m.group())
+            obj, _ = json.JSONDecoder().raw_decode(raw, m.start())
+            return obj
         raise
+
+
 

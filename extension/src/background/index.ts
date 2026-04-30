@@ -1,5 +1,8 @@
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
 
+// In-memory PDF relay: sidepanel stores PDF here, pdf-viewer.html fetches it
+let _pendingPdf: string | null = null
+
 interface ApiCallMessage {
   type: 'API_CALL'
   method: string
@@ -42,14 +45,26 @@ async function handleApiCall(msg: ApiCallMessage): Promise<{ data?: unknown; err
 }
 
 chrome.runtime.onMessage.addListener(
-  (message: IncomingMessage, sender, sendResponse) => {
-    if (message.type === 'API_CALL') {
-      handleApiCall(message).then(sendResponse)
-      return true // keep port open for async response
+  (message: IncomingMessage | { type: string; pdf_base64?: string }, _sender, sendResponse) => {
+    if ((message as ApiCallMessage).type === 'API_CALL') {
+      handleApiCall(message as ApiCallMessage).then(sendResponse)
+      return true
     }
 
-    if (message.type === 'OPEN_SIDE_PANEL' && sender.tab?.id) {
-      chrome.sidePanel.open({ tabId: sender.tab.id })
+    if (message.type === 'OPEN_SIDE_PANEL' && (_sender as chrome.runtime.MessageSender).tab?.id) {
+      chrome.sidePanel.open({ tabId: (_sender as chrome.runtime.MessageSender).tab!.id! })
+    }
+
+    // PDF relay: sidepanel calls STORE_PDF, pdf-viewer.html calls GET_PDF
+    if (message.type === 'STORE_PDF') {
+      _pendingPdf = (message as { type: string; pdf_base64: string }).pdf_base64 ?? null
+      sendResponse({ ok: true })
+      return true
+    }
+    if (message.type === 'GET_PDF') {
+      sendResponse({ pdf_base64: _pendingPdf })
+      _pendingPdf = null
+      return true
     }
 
     return false

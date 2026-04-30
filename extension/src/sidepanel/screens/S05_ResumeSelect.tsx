@@ -17,6 +17,9 @@ export function S05_ResumeSelect({ navigate }: Props) {
   const [saveAsDefault, setSaveAsDefault] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [error, setError] = useState('')
+  const [tailoredResumeId, setTailoredResumeId] = useState<string | null>(null)
+  const [atsScores, setAtsScores] = useState<{ before: number; after: number } | null>(null)
+  const [reviewing, setReviewing] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const token = useAuthStore((s) => s.token)
@@ -30,12 +33,50 @@ export function S05_ResumeSelect({ navigate }: Props) {
 
   const canTailor = !!(masterResume && detectedJob?.jobDescription)
 
+  async function proceedToFill(resumeId: string) {
+    let parsedData: Record<string, unknown> = {}
+    let userProfile: Record<string, unknown> = {}
+    try {
+      const [resumeRes, profileRes] = await Promise.allSettled([
+        api.resume.parsedData(resumeId),
+        api.auth.profile(),
+      ])
+      if (resumeRes.status === 'fulfilled') parsedData = resumeRes.value.parsed_data ?? {}
+      if (profileRes.status === 'fulfilled') {
+        const p = profileRes.value
+        if (p.first_name) userProfile.first_name = p.first_name
+        if (p.last_name) userProfile.last_name = p.last_name
+        if (p.phone) userProfile.phone = p.phone
+        if (p.linkedin) userProfile.linkedin = p.linkedin
+        if (p.street_address) userProfile.street_address = p.street_address
+        if (p.city) userProfile.city = p.city
+        if (p.state) userProfile.state = p.state
+        if (p.country) userProfile.country = p.country
+        if (p.postal_code) userProfile.postal_code = p.postal_code
+      }
+    } catch { /* non-fatal */ }
+
+    setSelected({ id: resumeId, type: 'uploaded' })
+    resetForm()
+    setFormStatus('filling')
+
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    if (tab?.id) {
+      chrome.tabs.sendMessage(tab.id, {
+        type: 'START_FILL',
+        resumeData: { id: resumeId, ...parsedData, ...userProfile },
+        token,
+        autoAdvance,
+      })
+    }
+    navigate('S06')
+  }
+
   async function handleContinue() {
     setError('')
     let resumeId = masterResume?.id ?? ''
 
     if (selectedCard === 'tailored') {
-      // Card B: AI-tailor the master resume to the detected JD
       if (!masterResume || !detectedJob?.jobDescription) {
         setError('Master resume and a detected job are required for AI tailoring')
         return
@@ -43,15 +84,26 @@ export function S05_ResumeSelect({ navigate }: Props) {
       setTailoring(true)
       try {
         const res = await api.resume.tailor(masterResume.id, detectedJob.jobDescription)
-        resumeId = res.resume_id
+        setTailoredResumeId(res.resume_id)
+        setAtsScores({ before: res.ats_before, after: res.ats_after })
+
+        // Open PDF in new tab via extension page (blob URLs from sidepanel are blocked by Chrome)
+        if (res.pdf_base64) {
+          await new Promise<void>((resolve) =>
+            chrome.runtime.sendMessage({ type: 'STORE_PDF', pdf_base64: res.pdf_base64 }, () => resolve())
+          )
+          chrome.tabs.create({ url: chrome.runtime.getURL('pdf-viewer.html') })
+        }
+
+        setTailoring(false)
+        setReviewing(true)
+        return  // wait for user to confirm in review UI
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : 'Tailoring failed')
         setTailoring(false)
         return
       }
-      setTailoring(false)
     } else if (selectedFile) {
-      // Card A with new file upload
       setUploading(true)
       try {
         const fd = new FormData()
@@ -74,55 +126,56 @@ export function S05_ResumeSelect({ navigate }: Props) {
     }
 
     if (!resumeId) { setError('No resume selected'); return }
+    await proceedToFill(resumeId)
+  }
 
-    // Fetch resume parsed data and user profile in parallel
-    let parsedData: Record<string, unknown> = {}
-    let userProfile: Record<string, unknown> = {}
-    try {
-      const [resumeRes, profileRes] = await Promise.allSettled([
-        api.resume.parsedData(resumeId),
-        api.auth.profile(),
-      ])
-      if (resumeRes.status === 'fulfilled') parsedData = resumeRes.value.parsed_data ?? {}
-      if (profileRes.status === 'fulfilled') {
-        const p = profileRes.value
-        // User profile fields override resume fields for contact/address data
-        if (p.first_name) userProfile.first_name = p.first_name
-        if (p.last_name) userProfile.last_name = p.last_name
-        if (p.phone) userProfile.phone = p.phone
-        if (p.linkedin) userProfile.linkedin = p.linkedin
-        if (p.street_address) userProfile.street_address = p.street_address
-        if (p.city) userProfile.city = p.city
-        if (p.state) userProfile.state = p.state
-        if (p.country) userProfile.country = p.country
-        if (p.postal_code) userProfile.postal_code = p.postal_code
-      }
-    } catch {
-      // Non-fatal
-    }
-
-    setSelected({ id: resumeId, type: 'uploaded' })
-    resetForm()
-    setFormStatus('filling')
-
-    // Tell the content script to start filling — resume data merged with user profile
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-    if (tab?.id) {
-      chrome.tabs.sendMessage(tab.id, {
-        type: 'START_FILL',
-        resumeData: { id: resumeId, ...parsedData, ...userProfile },
-        token: token,
-        autoAdvance,
-      })
-    }
-
-    navigate('S06')
+  function handleReset() {
+    setReviewing(false)
+    setTailoredResumeId(null)
+    setAtsScores(null)
+    setError('')
   }
 
   const canContinue = selectedCard === 'tailored'
     ? canTailor
     : !!(selectedFile || masterResume)
   const isBusy = uploading || tailoring
+
+  // ── Review state (Card B: tailoring complete, PDF opened in new tab) ──
+  if (reviewing && tailoredResumeId) {
+    return (
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '24px 24px 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Review your tailored resume</h2>
+
+          <div style={{ borderRadius: 12, border: '2px solid #1D9E75', padding: 16, background: '#E7F6F1' }}>
+            <p style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: '#1D9E75' }}>✓ Resume optimized</p>
+            {atsScores && (
+              <p style={{ margin: 0, fontSize: 13, color: '#374151' }}>
+                ATS score: <strong>{atsScores.before}</strong> → <strong style={{ color: '#1D9E75' }}>{atsScores.after}</strong>
+                {' '}(+{atsScores.after - atsScores.before})
+              </p>
+            )}
+            <p style={{ margin: '8px 0 0', fontSize: 12, color: '#6B7280' }}>
+              The PDF has been opened in a new tab. Review it and decide below.
+            </p>
+          </div>
+
+          {error && <p style={{ margin: 0, fontSize: 12, color: '#E24B4A' }}>{error}</p>}
+
+          <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <Btn kind="primary" fullWidth onClick={() => proceedToFill(tailoredResumeId)}>
+              Use this resume →
+            </Btn>
+            <Btn kind="secondary" fullWidth onClick={handleReset}>
+              ← Try a different option
+            </Btn>
+          </div>
+        </div>
+        <BottomNav active="apply" navigate={navigate} />
+      </div>
+    )
+  }
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
