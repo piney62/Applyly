@@ -12,17 +12,16 @@ import {
   getInputLabel,
   type ResumeData,
   type FillResult,
-} from './formFiller'
-import type { PlatformAdapter } from './adapters/types'
+} from '../formFiller'
+import type { PlatformAdapter } from '../adapters/types'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-type MachineStatus = 'armed' | 'filling' | 'navigating' | 'complete' | 'paused'
+type FillerStatus = 'armed' | 'filling' | 'navigating' | 'complete' | 'paused'
 
 // ── Next-button detection ──────────────────────────────────────────────────────
 
-// Generic fallbacks used after platform adapter's own selectors don't match.
-const GENERIC_NEXT_SELECTORS = [
+const INDEED_NEXT_SELECTORS = [
   'button[aria-label="Next" i]',
   'button[aria-label="Continue" i]',
   'input[type="submit"][value*="next" i]',
@@ -34,18 +33,17 @@ const SUBMIT_KEYWORDS = ['submit', 'apply', 'send application', 'finish', 'compl
 
 function isBtnVisible(btn: HTMLButtonElement): boolean {
   if (btn.disabled) return false
-  // offsetParent is null for position:fixed elements (e.g. Indeed's sticky footer),
-  // so use getBoundingClientRect instead
+  // offsetParent is null for position:fixed elements (Indeed's sticky footer)
   const r = btn.getBoundingClientRect()
   return r.width > 0 && r.height > 0
 }
 
-// ── FormStateMachine ───────────────────────────────────────────────────────────
+// ── IndeedFiller ───────────────────────────────────────────────────────────────
 
 type SafeSend = (msg: Record<string, unknown>) => void
 
-export class FormStateMachine {
-  private status: MachineStatus = 'armed'
+export class IndeedFiller {
+  private status: FillerStatus = 'armed'
   private currentPage = 1
   private totalPages: number | null = null
   private filledCount = 0
@@ -75,8 +73,6 @@ export class FormStateMachine {
   // ── Public ─────────────────────────────────────────────────────────────────
 
   async run() {
-    // ARMED: wait until form fields actually appear in the DOM
-    // (user still needs to click Apply on the job page)
     this.send({ type: 'FILL_ARMED' })
     await this.waitForForm()
 
@@ -96,19 +92,18 @@ export class FormStateMachine {
       }
 
       await this.fillCurrentPage()
-      if ((this.status as MachineStatus) === 'paused') break
+      if ((this.status as FillerStatus) === 'paused') break
 
-      // Allow SPA to react to field changes (e.g. Indeed shows Continue button after selects are filled)
+      // Indeed shows Continue button after selects are filled — give SPA time to react
       await this.delay(500)
 
       const lastPage = this.isLastPage()
       const nextBtn = lastPage ? null : this.findNextButton()
 
-      // Semi-auto: always verify the current page before advancing or completing
       if (!this.autoAdvance) {
         this.send({ type: 'PAGE_FILL_COMPLETE', currentPage: this.currentPage, totalPages: this.totalPages })
         await this.waitForUserAdvance()
-        if ((this.status as MachineStatus) === 'paused') break
+        if ((this.status as FillerStatus) === 'paused') break
       }
 
       if (lastPage || !nextBtn) {
@@ -116,7 +111,6 @@ export class FormStateMachine {
         break
       }
 
-      // Include first element of each group so group-only pages still anchor the transition
       const prevNonRadio = getNonRadioFillableFields()
       const prevRadioFirsts = Array.from(getRadioGroups().values())
         .map((inputs) => inputs[0])
@@ -133,7 +127,7 @@ export class FormStateMachine {
       this.notifyPageChange()
 
       await this.waitForPageTransition(prevFields)
-      if ((this.status as MachineStatus) !== 'paused') this.status = 'filling'
+      if ((this.status as FillerStatus) !== 'paused') this.status = 'filling'
     }
   }
 
@@ -146,11 +140,9 @@ export class FormStateMachine {
     this.autoAdvance = v
   }
 
-  // ── Page filling ────────────────────────────────────────────────────────────
+  // ── Resume selection page (Indeed-specific) ─────────────────────────────────
 
   private async handleResumeSelectionPage(): Promise<boolean> {
-    // Adapter may provide a fully custom implementation (e.g. Workday widgets).
-    // Otherwise we use the default flow below, parameterized by adapter.selectors.
     if (this.adapter.handleResumeSelectionPage) {
       return this.adapter.handleResumeSelectionPage({
         resumeData: this.resumeData,
@@ -165,7 +157,6 @@ export class FormStateMachine {
 
     if (!this.resumeData.id) return false
 
-    // Notify panel of this page's single field
     this.send({ type: 'PAGE_FIELDS_DETECTED', labels: ['Resume'], currentPage: this.currentPage })
 
     const fileData = await new Promise<{ filename: string; content_type: string; content_base64: string } | null>(
@@ -183,7 +174,6 @@ export class FormStateMachine {
 
     if (!fileData) return false
 
-    // Inject directly into the hidden file input — no button clicks needed
     const fileInputSel = this.adapter.selectors.fileInput
     const fileInput = (fileInputSel ? document.querySelector<HTMLInputElement>(fileInputSel) : null)
       ?? document.querySelector<HTMLInputElement>('input[type="file"]')
@@ -201,16 +191,14 @@ export class FormStateMachine {
 
     this.send({ type: 'FIELD_FILLED', fieldLabel: 'Resume', value: fileData.filename, isAI: false, pageIndex: this.currentPage })
 
-    await this.delay(2000) // wait for Indeed to process the upload
+    await this.delay(2000) // Indeed needs time to process the uploaded file
 
-    // Semi-auto: show verification button and wait for user
     if (!this.autoAdvance) {
       this.send({ type: 'PAGE_FILL_COMPLETE', currentPage: this.currentPage, totalPages: this.totalPages })
       await this.waitForUserAdvance()
-      if ((this.status as MachineStatus) === 'paused') return true
+      if ((this.status as FillerStatus) === 'paused') return true
     }
 
-    // Click Continue and wait for the resume form to disappear
     const resumeContinueSels = this.adapter.selectors.resumePageContinue ?? []
     let continueBtn: HTMLButtonElement | null = null
     for (const sel of resumeContinueSels) {
@@ -225,7 +213,6 @@ export class FormStateMachine {
     this.currentPage++
     this.notifyPageChange()
 
-    // Wait for resume-selection-form to leave the DOM
     const resumeFormSel = this.adapter.selectors.resumeSelectionForm
     await new Promise<void>((resolve) => {
       this.observer?.disconnect()
@@ -239,18 +226,18 @@ export class FormStateMachine {
       setTimeout(() => { this.observer?.disconnect(); resolve() }, 8000)
     })
 
-    if ((this.status as MachineStatus) !== 'paused') this.status = 'filling'
+    if ((this.status as FillerStatus) !== 'paused') this.status = 'filling'
     return true
   }
 
-  private async fillCurrentPage() {
+  // ── Page filling ────────────────────────────────────────────────────────────
 
+  private async fillCurrentPage() {
     const reactSelects = getReactSelectContainers()
     const checkboxGroups = getCheckboxGroups()
     const radioGroups = getRadioGroups()
     const fields = getNonRadioFillableFields()
 
-    // Notify panel of all fields detected on this page
     const allLabels = [
       ...reactSelects.map((c) => getReactSelectLabel(c) || 'Select'),
       ...Array.from(checkboxGroups.values()).map((inputs) =>
@@ -263,7 +250,7 @@ export class FormStateMachine {
     ].filter(Boolean)
     this.send({ type: 'PAGE_FIELDS_DETECTED', labels: allLabels, currentPage: this.currentPage })
 
-    // Pass 0: React Select custom combobox dropdowns
+    // Pass 0: React Select dropdowns
     for (const container of reactSelects) {
       if (this.status === 'paused') return
       if (this.filledElements.has(container)) continue
@@ -278,7 +265,7 @@ export class FormStateMachine {
       }
     }
 
-    // Pass 1: checkbox groups — one AI call per group, not per checkbox
+    // Pass 1: checkbox groups
     for (const [, inputs] of checkboxGroups) {
       if (this.status === 'paused') return
       if (inputs[0] && this.filledElements.has(inputs[0])) continue
@@ -293,7 +280,7 @@ export class FormStateMachine {
       }
     }
 
-    // Pass 2: radio groups (track by first input element)
+    // Pass 2: radio groups
     for (const [, inputs] of radioGroups) {
       if (this.status === 'paused') return
       if (inputs[0] && this.filledElements.has(inputs[0])) continue
@@ -309,7 +296,7 @@ export class FormStateMachine {
     }
     if (radioGroups.size > 0) await this.delay(100)
 
-    // Pass 3: other fields — skip already-filled elements
+    // Pass 3: text / select / date / checkbox fields
     for (const field of fields) {
       if (this.status === 'paused') return
       if (this.filledElements.has(field)) continue
@@ -325,7 +312,53 @@ export class FormStateMachine {
     }
   }
 
-  /** Semi-auto: wait until panel sends ADVANCE_PAGE */
+  // ── Transition detection ────────────────────────────────────────────────────
+
+  private waitForForm(): Promise<void> {
+    const hasAnyFields = () =>
+      getNonRadioFillableFields().length > 0 ||
+      getRadioGroups().size > 0 ||
+      getCheckboxGroups().size > 0
+
+    return new Promise((resolve) => {
+      if (hasAnyFields()) { resolve(); return }
+      this.observer?.disconnect()
+      this.observer = new MutationObserver(() => {
+        if (hasAnyFields()) {
+          this.observer?.disconnect()
+          setTimeout(resolve, 500)
+        }
+      })
+      this.observer.observe(document.body, { childList: true, subtree: true })
+      setTimeout(() => { this.observer?.disconnect(); resolve() }, 5 * 60 * 1000)
+    })
+  }
+
+  private waitForPageTransition(prevFields: HTMLElement[]): Promise<void> {
+    return new Promise((resolve) => {
+      this.observer?.disconnect()
+
+      const check = (): boolean => {
+        const prevGone = prevFields.length === 0 || prevFields.every((f) => !document.contains(f))
+        if (!prevGone) return false
+        return getNonRadioFillableFields().length > 0 ||
+          getRadioGroups().size > 0 ||
+          getCheckboxGroups().size > 0
+      }
+
+      if (check()) { setTimeout(resolve, 400); return }
+
+      this.observer = new MutationObserver(() => {
+        if (check()) {
+          this.observer?.disconnect()
+          setTimeout(resolve, 400)
+        }
+      })
+      this.observer.observe(document.body, { childList: true, subtree: true })
+      setTimeout(() => { this.observer?.disconnect(); resolve() }, 8000)
+    })
+  }
+
   private waitForUserAdvance(): Promise<void> {
     return new Promise((resolve) => {
       const listener = (msg: Record<string, unknown>) => {
@@ -341,70 +374,14 @@ export class FormStateMachine {
     })
   }
 
-  // ── Transition detection ────────────────────────────────────────────────────
-
-  /** ARMED → FILLING: wait until form fields appear in DOM */
-  private waitForForm(): Promise<void> {
-    const hasAnyFields = () =>
-      getNonRadioFillableFields().length > 0 ||
-      getRadioGroups().size > 0 ||
-      getCheckboxGroups().size > 0
-
-    return new Promise((resolve) => {
-      if (hasAnyFields()) {
-        resolve()
-        return
-      }
-      this.observer?.disconnect()
-      this.observer = new MutationObserver(() => {
-        if (hasAnyFields()) {
-          this.observer?.disconnect()
-          setTimeout(resolve, 500) // settle
-        }
-      })
-      this.observer.observe(document.body, { childList: true, subtree: true })
-      // 5-minute timeout — user may take time to click Apply
-      setTimeout(() => { this.observer?.disconnect(); resolve() }, 5 * 60 * 1000)
-    })
-  }
-
-  /** NAVIGATING → FILLING: wait until old fields leave and new ones arrive */
-  private waitForPageTransition(prevFields: HTMLElement[]): Promise<void> {
-    return new Promise((resolve) => {
-      this.observer?.disconnect()
-
-      const check = (): boolean => {
-        const prevGone = prevFields.length === 0 || prevFields.every((f) => !document.contains(f))
-        if (!prevGone) return false
-        return getNonRadioFillableFields().length > 0 ||
-          getRadioGroups().size > 0 ||
-          getCheckboxGroups().size > 0
-      }
-
-      // Resolve immediately if new page is already fully rendered
-      if (check()) { setTimeout(resolve, 400); return }
-
-      this.observer = new MutationObserver(() => {
-        if (check()) {
-          this.observer?.disconnect()
-          setTimeout(resolve, 400)
-        }
-      })
-      this.observer.observe(document.body, { childList: true, subtree: true })
-      // Hard timeout — proceed even if detection fails
-      setTimeout(() => { this.observer?.disconnect(); resolve() }, 8000)
-    })
-  }
-
-  // ── Button detection (adapter-aware) ────────────────────────────────────────
+  // ── Button detection ────────────────────────────────────────────────────────
 
   private findNextButton(): HTMLButtonElement | null {
     const adapterSels = this.adapter.selectors.nextButton ?? []
-    for (const sel of [...adapterSels, ...GENERIC_NEXT_SELECTORS]) {
+    for (const sel of [...adapterSels, ...INDEED_NEXT_SELECTORS]) {
       const btn = document.querySelector<HTMLButtonElement>(sel)
       if (btn && isBtnVisible(btn)) return btn
     }
-    // Fallback: any visible button whose text looks like "next/continue"
     const buttons = document.querySelectorAll<HTMLButtonElement>('button:not([disabled])')
     for (const btn of buttons) {
       const t = btn.innerText?.toLowerCase() ?? ''
@@ -433,21 +410,13 @@ export class FormStateMachine {
   }
 
   private notifyPageChange() {
-    this.send({
-      type: 'PAGE_CHANGED',
-      currentPage: this.currentPage,
-      totalPages: this.totalPages,
-    })
+    this.send({ type: 'PAGE_CHANGED', currentPage: this.currentPage, totalPages: this.totalPages })
   }
 
   private complete() {
     this.status = 'complete'
     this.observer?.disconnect()
-    this.send({
-      type: 'ALL_FIELDS_DONE',
-      totalFilled: this.filledCount,
-      aiCount: this.aiCount,
-    })
+    this.send({ type: 'ALL_FIELDS_DONE', totalFilled: this.filledCount, aiCount: this.aiCount })
   }
 
   private report(result: FillResult) {

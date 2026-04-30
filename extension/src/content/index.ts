@@ -1,9 +1,12 @@
 import { detectPlatform, findAdapter } from './detector'
-import { FormStateMachine } from './stateMachine'
+import { IndeedFiller } from './platforms/indeed'
+import { GreenhouseFiller } from './platforms/greenhouse'
 import { getNonRadioFillableFields, getInputLabel, setNativeValue, getRadioGroups, getCheckboxGroups, getGroupLabel } from './formFiller'
 import type { PlatformAdapter } from './adapters/types'
 
-let machine: FormStateMachine | null = null
+type AnyFiller = { run(): void; pause(): void; setAutoAdvance(v: boolean): void }
+
+let machine: AnyFiller | null = null
 let lastDetectedUrl = ''
 let confirmWatcher: MutationObserver | null = null
 let applicationTracked = false
@@ -78,13 +81,17 @@ chrome.runtime.onMessage.addListener((message) => {
       return
     }
     activeAdapter = adapter
-    machine = new FormStateMachine(
-      adapter,
-      message.resumeData,
-      message.token ?? '',
-      safeSend,
-      message.autoAdvance !== false,
-    )
+
+    // Dispatch to the platform-specific filler — each platform is fully independent
+    if (adapter.name === 'Indeed') {
+      machine = new IndeedFiller(adapter, message.resumeData, message.token ?? '', safeSend, message.autoAdvance !== false)
+    } else if (adapter.name === 'Greenhouse') {
+      machine = new GreenhouseFiller(adapter, message.resumeData, message.token ?? '', safeSend, message.autoAdvance !== false)
+    } else {
+      console.warn('[Applyly] No filler implemented for platform:', adapter.name)
+      return
+    }
+
     machine.run()
     startConfirmationWatch()
   }

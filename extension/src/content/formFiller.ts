@@ -245,9 +245,9 @@ async function fillCheckboxField(
   const label = getInputLabel(el)
   if (!label) return null
 
-  // Privacy policy / terms → always check
+  // Privacy / terms / consent checkboxes → always check
   const lc = label.toLowerCase()
-  if (lc.includes('agree') || lc.includes('terms') || lc.includes('privacy')) {
+  if (lc.includes('agree') || lc.includes('terms') || lc.includes('privacy') || lc.includes('consent')) {
     if (!el.checked) el.click()
     return { label, value: 'checked', isAI: false }
   }
@@ -542,14 +542,21 @@ export async function fillReactSelectField(
   const control = container.querySelector<HTMLElement>('.select__control')
   if (!control) return null
 
-  // React Select opens on mousedown. Dispatch it explicitly before click()
-  // so Greenhouse's custom toggle button variant also responds correctly.
-  control.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }))
-  control.click()
+  // Scroll the control into view so click events register correctly
+  control.scrollIntoView({ block: 'center' })
+  await new Promise<void>((r) => setTimeout(r, 50))
 
-  // Poll up to 800ms for the menu (Greenhouse uses CSS entry animations)
+  // Greenhouse replaces the standard chevron with button[aria-label="Toggle flyout"].
+  // Click that button directly; fall back to clicking the control div.
+  const toggleBtn = container.querySelector<HTMLButtonElement>('button[aria-label="Toggle flyout"]')
+  const clickTarget = toggleBtn ?? control
+  clickTarget.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }))
+  clickTarget.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true, view: window }))
+  clickTarget.click()
+
+  // Poll up to 1500ms for the menu (Greenhouse uses CSS entry animations)
   let menu: HTMLElement | null = null
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 15; i++) {
     await new Promise<void>((r) => setTimeout(r, 100))
     menu = container.querySelector<HTMLElement>('.select__menu') ?? null
     if (!menu) {
@@ -565,6 +572,20 @@ export async function fillReactSelectField(
   const optionEls = Array.from(menu.querySelectorAll<HTMLElement>('.select__option'))
   const optionTexts = optionEls.map((o) => o.textContent?.trim() ?? '').filter(Boolean)
   if (optionTexts.length === 0) { document.body.click(); return null }
+
+  // Demographic questions: auto-select "Prefer not to respond" without calling AI
+  const DEMOGRAPHIC_KEYWORDS = ['ethnic', 'race', 'racial', 'gender', 'disability', 'veteran', 'lgbtq', 'sexual orientation', 'self-identif']
+  if (DEMOGRAPHIC_KEYWORDS.some((kw) => label.toLowerCase().includes(kw))) {
+    const preferNot = optionEls.find((o) => {
+      const t = (o.textContent?.trim() ?? '').toLowerCase()
+      return t.includes('prefer not') || t.includes('decline') || t.includes('not to say') || t.includes('not answer')
+    })
+    if (preferNot) {
+      preferNot.click()
+      await new Promise<void>((r) => setTimeout(r, 100))
+      return { label, value: preferNot.textContent?.trim() ?? 'Prefer not to respond', isAI: false }
+    }
+  }
 
   // Resume mapping — verify it actually matches an option before trusting it
   let targetText = mapResumeField(label, resume)
