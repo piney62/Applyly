@@ -6,6 +6,7 @@
   "permissions": ["sidePanel", "activeTab", "storage", "tabs"],
   "host_permissions": [
     "http://localhost:8000/*",
+    "http://192.168.0.*/*",
     "*://*.indeed.com/*",
     "*://*.myworkdayjobs.com/*",
     "*://*.greenhouse.io/*",
