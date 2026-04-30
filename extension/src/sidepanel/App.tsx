@@ -28,7 +28,7 @@ export function App() {
   const { addPageFields, setPage, setStatus: setFormStatus, markFieldFilled, markFieldSkipped } = useFormStore()
 
   const [screen, setScreen] = useState<Screen>(() => {
-    if (!isLoggedIn) return 'S00'
+    if (!isLoggedIn) return 'S01'
     if (!masterResume) return 'S02'
     return 'S03'
   })

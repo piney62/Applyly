@@ -20,6 +20,7 @@ export function S05_ResumeSelect({ navigate }: Props) {
   const [tailoredResumeId, setTailoredResumeId] = useState<string | null>(null)
   const [atsScores, setAtsScores] = useState<{ before: number; after: number } | null>(null)
   const [reviewing, setReviewing] = useState(false)
+  const [pdfBase64, setPdfBase64] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const token = useAuthStore((s) => s.token)
@@ -86,14 +87,7 @@ export function S05_ResumeSelect({ navigate }: Props) {
         const res = await api.resume.tailor(masterResume.id, detectedJob.jobDescription)
         setTailoredResumeId(res.resume_id)
         setAtsScores({ before: res.ats_before, after: res.ats_after })
-
-        // Open PDF in new tab via extension page (blob URLs from sidepanel are blocked by Chrome)
-        if (res.pdf_base64) {
-          await new Promise<void>((resolve) =>
-            chrome.runtime.sendMessage({ type: 'STORE_PDF', pdf_base64: res.pdf_base64 }, () => resolve())
-          )
-          chrome.tabs.create({ url: chrome.runtime.getURL('pdf-viewer.html') })
-        }
+        if (res.pdf_base64) setPdfBase64(res.pdf_base64)
 
         setTailoring(false)
         setReviewing(true)
@@ -129,10 +123,19 @@ export function S05_ResumeSelect({ navigate }: Props) {
     await proceedToFill(resumeId)
   }
 
+  async function handleViewPdf() {
+    if (!pdfBase64) return
+    await new Promise<void>((resolve) =>
+      chrome.runtime.sendMessage({ type: 'STORE_PDF', pdf_base64: pdfBase64 }, () => resolve())
+    )
+    chrome.tabs.create({ url: chrome.runtime.getURL('pdf-viewer.html') })
+  }
+
   function handleReset() {
     setReviewing(false)
     setTailoredResumeId(null)
     setAtsScores(null)
+    setPdfBase64(null)
     setError('')
   }
 
@@ -156,10 +159,13 @@ export function S05_ResumeSelect({ navigate }: Props) {
                 {' '}(+{atsScores.after - atsScores.before})
               </p>
             )}
-            <p style={{ margin: '8px 0 0', fontSize: 12, color: '#6B7280' }}>
-              The PDF has been opened in a new tab. Review it and decide below.
-            </p>
           </div>
+
+          {pdfBase64 && (
+            <Btn kind="secondary" fullWidth onClick={handleViewPdf}>
+              View Resume PDF ↗
+            </Btn>
+          )}
 
           {error && <p style={{ margin: 0, fontSize: 12, color: '#E24B4A' }}>{error}</p>}
 

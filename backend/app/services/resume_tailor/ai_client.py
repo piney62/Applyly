@@ -11,10 +11,13 @@ log = logging.getLogger(__name__)
 
 
 # Output-token reservation for both providers. Groq's free-tier TPM limit is
-# 12,000 tokens per minute and the limit counts (input + this reservation),
-# so keeping this conservative is what makes a single resume rewrite actually
-# fit. 5000 comfortably covers ~18 bullet rewrites with explanations.
-_MAX_OUTPUT_TOKENS = 5000
+# 12,000 tokens per minute and the limit counts (input + this reservation).
+# 4500 keeps the initial call under 12,000 while still covering ~16 rewrites.
+_MAX_OUTPUT_TOKENS = 4500
+
+# Fallback model for Groq when the primary 70B model is too large (413).
+# llama-3.1-8b-instant has a 20,000 TPM limit — lower quality but available.
+_GROQ_FALLBACK_MODEL = "llama-3.1-8b-instant"
 
 # Substrings that indicate a provider rejected the call due to free-tier quota
 # or rate limiting. Matched case-insensitively against str(exception).
@@ -109,30 +112,35 @@ def _try_gemini(system_prompt: str, user_content: str, gkey: str) -> str | None:
 
 
 def _try_groq(system_prompt: str, user_content: str, qkey: str) -> str:
-    """Single Groq call. Raises QuotaError on quota, propagates other errors."""
-    log.info("     ðŸŸ  Calling Groq [llama-3.3-70b-versatile]â€¦")
+    """Try llama-3.3-70b first; fall back to llama-3.1-8b-instant on 413."""
     client = Groq(api_key=qkey)
-    try:
-        resp = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": system_prompt},  # rules / role
-                {"role": "user",   "content": user_content},   # resume + JD data
-            ],
-            max_tokens=_MAX_OUTPUT_TOKENS,
-            temperature=0.1,
-        )
-    except Exception as e:
-        if is_request_too_big(e):
-            # Surface the actual size info so user knows what hit the limit.
-            log.warning(f"     âš ï¸  Groq request too large: {e}")
+    models = [("llama-3.3-70b-versatile", _MAX_OUTPUT_TOKENS),
+              (_GROQ_FALLBACK_MODEL,       _MAX_OUTPUT_TOKENS)]
+    last_exc: Exception = RuntimeError("Groq: no models tried")
+    for model, max_tok in models:
+        log.info(f"     Calling Groq [{model}]...")
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user",   "content": user_content},
+                ],
+                max_tokens=max_tok,
+                temperature=0.1,
+            )
+            log.info(f"     Groq [{model}] succeeded")
+            return resp.choices[0].message.content
+        except Exception as e:
+            if is_request_too_big(e):
+                log.warning(f"     Groq [{model}] too large, trying smaller model")
+                last_exc = e
+                continue  # try next model
+            if is_quota_error(e):
+                log.warning(f"     Groq [{model}] quota/rate limit: {e}")
+                raise QuotaError("Groq", model, e) from e
             raise
-        if is_quota_error(e):
-            log.warning(f"     âš ï¸  Groq quota/rate limit: {e}")
-            raise QuotaError("Groq", "llama-3.3-70b-versatile", e) from e
-        raise
-    log.info("     âœ… Groq succeeded")
-    return resp.choices[0].message.content
+    raise last_exc
 
 
 def ai_call(system_prompt: str, user_content: str, gkey: str, qkey: str) -> tuple[str, str]:
@@ -179,6 +187,7 @@ def parse_json(raw: str) -> Any:
             obj, _ = json.JSONDecoder().raw_decode(raw, m.start())
             return obj
         raise
+
 
 
 
