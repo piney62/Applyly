@@ -37,6 +37,7 @@ if _ext_id:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins,
+    allow_origin_regex=r"chrome-extension://.*",  # allow any extension ID (LAN sharing)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -77,7 +77,15 @@ export function S03_Detection({ navigate }: Props) {
 
             {error && <p style={{ margin: 0, fontSize: 12, color: '#E24B4A' }}>{error}</p>}
 
-            <div style={{ marginTop: 'auto' }}>
+            <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <Btn
+                kind="secondary"
+                fullWidth
+                disabled={!masterResume}
+                onClick={() => navigate('S05')}
+              >
+                Skip to Resume →
+              </Btn>
               <Btn
                 kind="primary"
                 fullWidth
