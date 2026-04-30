@@ -20,7 +20,7 @@ export function S02_ResumeSetup({ navigate }: Props) {
   const setMaster = useResumeStore((s) => s.setMaster)
 
   async function handleFile(file: File) {
-    if (!file.name.endsWith('.docx')) { setError('Please upload a .docx file'); return }
+    if (!file.name.endsWith('.docx') && !file.name.endsWith('.pdf')) { setError('Please upload a .docx or .pdf file'); return }
     setError('')
     setPhase('loading')
 
@@ -75,12 +75,12 @@ export function S02_ResumeSetup({ navigate }: Props) {
             <p style={{ margin: '8px 0 0', fontSize: 13, color: '#374151', fontWeight: 500 }}>
               Drag & drop or <span style={{ color: '#534AB7' }}>browse</span>
             </p>
-            <p style={{ margin: '4px 0 0', fontSize: 11, color: '#9CA3AF' }}>.docx files only</p>
+            <p style={{ margin: '4px 0 0', fontSize: 11, color: '#9CA3AF' }}>.docx or .pdf files</p>
           </div>
           <input
             ref={fileRef}
             type="file"
-            accept=".docx"
+            accept=".docx,.pdf"
             style={{ display: 'none' }}
             onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f) }}
           />

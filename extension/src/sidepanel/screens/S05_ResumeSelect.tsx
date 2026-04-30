@@ -227,7 +227,7 @@ export function S05_ResumeSelect({ navigate }: Props) {
           <input
             ref={fileRef}
             type="file"
-            accept=".docx"
+            accept=".docx,.pdf"
             style={{ display: 'none' }}
             onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
           />

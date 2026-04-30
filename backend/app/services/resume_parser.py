@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import pypdf
 from docx import Document
 
 from app.services.ai_service import AIService
@@ -70,7 +71,23 @@ def _extract_text_sync(file_bytes: bytes) -> str:
     return "\n".join(paragraphs)
 
 
+def _extract_text_from_pdf_sync(file_bytes: bytes) -> str:
+    reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+    texts = []
+    for page in reader.pages:
+        text = page.extract_text()
+        if text:
+            texts.append(text.strip())
+    return "\n".join(texts)
+
+
 async def extract_text_from_docx(file_bytes: bytes) -> str:
+    return await asyncio.to_thread(_extract_text_sync, file_bytes)
+
+
+async def extract_text_from_file(file_bytes: bytes, filename: str) -> str:
+    if filename.lower().endswith(".pdf"):
+        return await asyncio.to_thread(_extract_text_from_pdf_sync, file_bytes)
     return await asyncio.to_thread(_extract_text_sync, file_bytes)
 
 

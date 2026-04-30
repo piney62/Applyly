@@ -12,7 +12,7 @@ from app.models.resume import Resume
 from app.models.user import User
 from app.routers.auth import get_current_user
 from app.services.ai_service import AIService, get_ai_service
-from app.services.resume_parser import extract_text_from_docx, structure_resume
+from app.services.resume_parser import extract_text_from_file, structure_resume
 from app.services.resume_tailor import tailor_resume
 from app.services.resume_tailor.ai_client import QuotaError
 
@@ -26,7 +26,7 @@ async def _parse_and_save(
     ai_service: AIService,
     original_filename: str | None = None,
 ) -> Resume:
-    raw_text = await extract_text_from_docx(file_bytes)
+    raw_text = await extract_text_from_file(file_bytes, original_filename or "")
     parsed_data = await structure_resume(raw_text, ai_service)
 
     resume = Resume(
@@ -49,8 +49,8 @@ async def upload_resume(
     db: AsyncSession = Depends(get_db),
     ai_service: AIService = Depends(get_ai_service),
 ):
-    if not file.filename or not file.filename.endswith(".docx"):
-        raise HTTPException(status_code=400, detail="Only .docx files are accepted")
+    if not file.filename or not (file.filename.endswith(".docx") or file.filename.endswith(".pdf")):
+        raise HTTPException(status_code=400, detail="Only .docx or .pdf files are accepted")
 
     file_bytes = await file.read()
     resume = await _parse_and_save(file_bytes, current_user.id, db, ai_service, file.filename)
@@ -67,8 +67,8 @@ async def upload_temp_resume(
     db: AsyncSession = Depends(get_db),
     ai_service: AIService = Depends(get_ai_service),
 ):
-    if not file.filename or not file.filename.endswith(".docx"):
-        raise HTTPException(status_code=400, detail="Only .docx files are accepted")
+    if not file.filename or not (file.filename.endswith(".docx") or file.filename.endswith(".pdf")):
+        raise HTTPException(status_code=400, detail="Only .docx or .pdf files are accepted")
 
     file_bytes = await file.read()
     user_id = current_user.id if save_as_default else None
@@ -117,10 +117,12 @@ async def download_resume_file(
         raise HTTPException(status_code=404, detail="File not stored for this resume")
 
     filename = resume.original_filename or f"resume_{resume_id}.docx"
-    content_type = (
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        if filename.endswith(".docx") else "application/octet-stream"
-    )
+    if filename.endswith(".pdf"):
+        content_type = "application/pdf"
+    elif filename.endswith(".docx"):
+        content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    else:
+        content_type = "application/octet-stream"
     return {
         "filename": filename,
         "content_type": content_type,
