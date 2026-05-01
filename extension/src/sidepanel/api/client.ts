@@ -86,7 +86,7 @@ export const api = {
     upload: async (formData: FormData, token: string) => {
       const res = await fetch(
         `${import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'}/resume/upload`,
-        { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
+        { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'ngrok-skip-browser-warning': '1' }, body: formData }
       )
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }))
@@ -98,7 +98,7 @@ export const api = {
     uploadTemp: async (formData: FormData, token: string) => {
       const res = await fetch(
         `${import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'}/resume/upload-temp`,
-        { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
+        { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'ngrok-skip-browser-warning': '1' }, body: formData }
       )
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }))

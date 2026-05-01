@@ -20,6 +20,7 @@ type IncomingMessage = ApiCallMessage | OpenSidePanelMessage
 async function handleApiCall(msg: ApiCallMessage): Promise<{ data?: unknown; error?: string }> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    'ngrok-skip-browser-warning': '1',
   }
   if (msg.token) {
     headers['Authorization'] = `Bearer ${msg.token}`
